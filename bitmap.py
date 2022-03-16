@@ -1,4 +1,5 @@
-import csv, json
+import csv
+import json
 import pandas as pd
 import itertools
 from argparse import ArgumentParser

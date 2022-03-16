@@ -23,7 +23,7 @@ def MFT_to_csv(MFT, file):
                   'SI last accessed time', 'File type', 'FN creation time', 'FN modification time',
                   'FN entry modification time', 'FN last accessed time', 'Parent entry number', 'Filename', 'Run list']
 
-    with open(file, 'w', newline='') as outfile_csv:
+    with open(file, 'w', newline='', encoding='utf-8') as outfile_csv:
         writer = csv.DictWriter(outfile_csv, fieldnames=fieldnames)
 
         writer.writeheader()
@@ -59,9 +59,7 @@ def MFT_to_csv(MFT, file):
                                   'Hard link count': value['header']['Hard link count'],
                                   'Allocation flag': value['header']['Allocation flag'],
                                   'Allocation flag (verbose)': value['header']['Allocation flag (verbose)'],
-                                  'Entry number': value['header']['Entry number']}, **(si | fn | d)))
-
-
+                                  'Entry number': value['header']['Entry number'], **si, **fn, **d}))
 
 def is_set(x, dict):
     return [dict[n] for n in range(16) if x & 1 << n != 0]

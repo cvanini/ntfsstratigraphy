@@ -1,14 +1,11 @@
 import copy
-import json
 import struct
-from dict import *
-from utils import *
-from datetime import datetime, timedelta
+from ressources.dict import *
+from ressources.utils import *
+from ressources.ProgressBar import printProgressBar
 from argparse import ArgumentParser
 
-
 MFT_RECORD_SIZE = 1024
-
 
 MFT_record = {
     'header': '',
@@ -17,9 +14,9 @@ MFT_record = {
     '$DATA': ''
 }
 
-#TODO: gérer les BAAD
+
+# TODO: gérer les BAAD
 # valeurs de vérification ?
-# comment possible d'avoir des flags différents de 00 à 03 ? regarder la doc Carrier
 # https://flatcap.github.io/linux-ntfs/ntfs/attributes/index.html
 # Gérer les non-base MFT entry (lorsque besoin de + d'une entrée pour stocker tous les attributs d'un fichier)
 # -> ils vont avoir un $ATTRIBUTE_LIST (0x20000000)
@@ -61,7 +58,7 @@ def parse_header(header, raw_record):
         header['Allocation flag (verbose)'] = '(Special index)'
     else:
         header['Allocation flag (verbose)'] = 'Unknown allocation flag'
-        #raise Exception("Invalid value for Allocation flag - possible values (00, 01, 02, 03)")
+        # raise Exception("Invalid value for Allocation flag - possible values (00, 01, 02, 03)")
 
     header['Entry logical size'] = struct.unpack("<I", raw_record[28:32])[0]
     header['Entry physical size'] = struct.unpack("<I", raw_record[28:32])[0]
@@ -73,10 +70,7 @@ def parse_header(header, raw_record):
     return header
 
 
-#TODO: gérer résident/non résident
-# essayer de comprendre résident/non résident ici
 def parse_attribute_header(record, dict):
-
     # includes the header ~of the header
     dict['Attribute size'] = struct.unpack("<I", record[4:8])[0]
     dict['Resident'] = struct.unpack("<B", record[8:9])[0]
@@ -94,6 +88,7 @@ def parse_attribute_header(record, dict):
     else:
         raise Exception("Wrong value for Resident flag - possible values (00, 01)")
 
+
 ########################## $STANDARD_INFORMATION ATTRIBUTE #############################################################
 
 def parse_standard(standard, raw_record, next_offset):
@@ -109,7 +104,7 @@ def parse_standard(standard, raw_record, next_offset):
     else:
         content_offset = standard['Content start offset']
     record = record[content_offset:]
-    #if standard['Resident'] == 0:
+    # if standard['Resident'] == 0:
     standard['Creation time'] = convert_filetime(struct.unpack("<Q", record[:8])[0])
     standard['Modification time'] = convert_filetime(struct.unpack("<Q", record[8:16])[0])
     standard['Entry modification time'] = convert_filetime(struct.unpack("<Q", record[16:24])[0])
@@ -118,6 +113,7 @@ def parse_standard(standard, raw_record, next_offset):
     standard['File type'] = is_set(f_type, file_type)
 
     return standard
+
 
 ########################## $ATTRIBUTE_LIST ATTRIBUTE ###################################################################
 def parse_attribute_list(attribute_list, raw_record, next_offset):
@@ -130,6 +126,7 @@ def parse_attribute_list(attribute_list, raw_record, next_offset):
     attribute_list['Attribute first offset'] = next_offset
     parse_attribute_header(record, attribute_list)
     return attribute_list
+
 
 ########################## $FILE_NAME ATTRIBUTE ########################################################################
 
@@ -154,11 +151,12 @@ def parse_filename(filename, raw_record, next_offset):
     filename['Modification time'] = convert_filetime(struct.unpack("<Q", record[16:24])[0])
     filename['Entry modification time'] = convert_filetime(struct.unpack("<Q", record[24:32])[0])
     filename['Last accessed time'] = convert_filetime(struct.unpack("<Q", record[32:40])[0])
-    filename['Filename length'] = struct.unpack("<B", record[64:65])[0]*2
+    filename['Filename length'] = struct.unpack("<B", record[64:65])[0] * 2
     length = filename['Filename length']
-    filename['Filename'] = record[66:66+length].decode('utf-16')
+    filename['Filename'] = record[66:66 + length].decode('utf-16')
 
     return filename
+
 
 ########################## $OBJECT_ID ATTRIBUTE ########################################################################
 
@@ -173,18 +171,20 @@ def parse_objectid(object_id, raw_record, next_offset):
     parse_attribute_header(record, object_id)
     return object_id
 
+
 ########################## $SECURITY_DESCRIPTOR ATTRIBUTE ##############################################################
 
 def parse_security_descriptor(security_descriptor, raw_record, next_offset):
     security_descriptor.clear()
 
-    if raw_record[next_offset:next_offset+ 4] != b'\x50\x00\x00\x00':
+    if raw_record[next_offset:next_offset + 4] != b'\x50\x00\x00\x00':
         raise Exception("Wrong start of SECURITY_DESCRIPTOR attribute")
 
     record = raw_record[next_offset:]
     security_descriptor['Attribute first offset'] = next_offset
     parse_attribute_header(record, security_descriptor)
     return security_descriptor
+
 
 ########################## $SVOLUME_NAME ATTRIBUTE #####################################################################
 
@@ -199,9 +199,10 @@ def parse_volume_name(volume_name, raw_record, next_offset):
         parse_attribute_header(record, volume_name)
         return volume_name
 
+
 ########################## $VOLUME_INFORMATION ATTRIBUTE ###############################################################
 
-#TODO: parser le contenu du $VOLUME_INFORMATION
+# TODO: parser le contenu du $VOLUME_INFORMATION
 def parse_volume_information(volume_information, raw_record, next_offset):
     volume_information.clear()
 
@@ -212,6 +213,7 @@ def parse_volume_information(volume_information, raw_record, next_offset):
         volume_information['Attribute first offset'] = next_offset
         parse_attribute_header(record, volume_information)
         return volume_information
+
 
 ########################## $DATA ATTRIBUTE #############################################################################
 
@@ -240,7 +242,7 @@ def parse_data(data, raw_record, offset, k):
         # left nibble = number of bytes that contains the position of the cluster in the pointer
         # right nibble = number of bytes that contains the number of cluster in the pointer
         first_off = data['Run list\'s start offset'] - 16
-        pointer_length = struct.unpack("<B", record[first_off:first_off+1])[0]
+        pointer_length = struct.unpack("<B", record[first_off:first_off + 1])[0]
         left, right = pointer_length >> 4, pointer_length & 0x0F
         first_off += 1
 
@@ -253,7 +255,7 @@ def parse_data(data, raw_record, offset, k):
             first_off += (left + right)
             run_list.append((pos_cluster, nb_cluster))
             i += 1
-            if record[first_off:first_off+1] == b'\x00':
+            if record[first_off:first_off + 1] == b'\x00':
                 break
 
         data['Run list'] = run_list
@@ -265,8 +267,9 @@ def parse_data(data, raw_record, offset, k):
 
     return data
 
+
 ########################## $INDEX_ROOT ATTRIBUTE #######################################################################
-#TODO: parser le contenu comme donne des infos sur le contenu du répertoire
+# TODO: parser le contenu comme donne des infos sur le contenu du répertoire
 def parse_index_root(index_root, raw_record, next_offset):
     index_root.clear()
 
@@ -277,6 +280,7 @@ def parse_index_root(index_root, raw_record, next_offset):
     index_root['Attribute first offset'] = next_offset
     parse_attribute_header(record, index_root)
     return index_root
+
 
 ########################## $INDEX_ALLOCATION ATTRIBUTE ##############################################################
 
@@ -291,6 +295,7 @@ def parse_index_allocation(index_allocation, raw_record, next_offset):
     parse_attribute_header(record, index_allocation)
     return index_allocation
 
+
 ########################## $BITMAP ATTRIBUTE ###########################################################################
 
 def parse_bitmap(bitmap, raw_record, next_offset):
@@ -304,8 +309,9 @@ def parse_bitmap(bitmap, raw_record, next_offset):
     parse_attribute_header(record, bitmap)
     return bitmap
 
+
 ########################## $LOGGED_UTILITY_STREAM ATTRIBUTE ############################################################
-#TODO: apparemment utilisé quand un fichier est chiffré, stocke la clé concernée
+# TODO: apparemment utilisé quand un fichier est chiffré, stocke la clé concernée
 def parse_logged_utility_stream(logged_utility_stream, raw_record, next_offset):
     logged_utility_stream.clear()
 
@@ -321,9 +327,15 @@ def parse_logged_utility_stream(logged_utility_stream, raw_record, next_offset):
 ########################################################################################################################
 
 MFT = {}
+
+
 def parse_all(records_dict):
+    n = 1
+
     for k, v in records_dict.items():
-        print(f'{k}')
+        printProgressBar(n, len(records_dict), stage='parsing records')
+        n += 1
+
         MFT_record['header'] = parse_header(header, v)
         if MFT_record['header'] is None:
             pass
@@ -333,17 +345,18 @@ def parse_all(records_dict):
             if v[next_offset:next_offset + 4] == b'\x10\x00\x00\x00':
                 MFT_record['$STANDARD_INFORMATION'] = parse_standard(standard, v, next_offset)
                 next_offset = MFT_record['$STANDARD_INFORMATION']['Attribute first offset'] + \
-                    MFT_record['$STANDARD_INFORMATION']['Attribute size']
+                              MFT_record['$STANDARD_INFORMATION']['Attribute size']
 
             if v[next_offset:next_offset + 4] == b'\x20\x00\x00\x00':
                 MFT_record['$ATTRIBUTE_LIST'] = parse_attribute_list(attribute_list, v, next_offset)
                 next_offset = MFT_record['$ATTRIBUTE_LIST']['Attribute first offset'] + \
                               MFT_record['$ATTRIBUTE_LIST']['Attribute size']
 
-            while True :
+            while True:
                 if v[next_offset:next_offset + 4] == b'\x30\x00\x00\x00':
                     MFT_record['$FILE_NAME'] = parse_filename(filename, v, next_offset)
-                    next_offset  = MFT_record['$FILE_NAME']['Attribute first offset'] + MFT_record['$FILE_NAME']['Attribute size']
+                    next_offset = MFT_record['$FILE_NAME']['Attribute first offset'] + MFT_record['$FILE_NAME'][
+                        'Attribute size']
 
                     if v[next_offset:next_offset + 4] == b'\x30\x00\x00\x00':
                         filenames = []
@@ -381,7 +394,7 @@ def parse_all(records_dict):
                 next_offset = MFT_record['$DATA']['Attribute first offset'] + \
                               MFT_record['$DATA']['Attribute size']
 
-            if v[next_offset:next_offset+4] == b'\x90\x00\x00\x00':
+            if v[next_offset:next_offset + 4] == b'\x90\x00\x00\x00':
                 MFT_record['$INDEX_ROOT'] = parse_index_root(index_root, v, next_offset)
                 next_offset = MFT_record['$INDEX_ROOT']['Attribute first offset'] + \
                               MFT_record['$INDEX_ROOT']['Attribute size']
@@ -391,17 +404,18 @@ def parse_all(records_dict):
                 next_offset = MFT_record['$INDEX_ALLOCATION']['Attribute first offset'] + \
                               MFT_record['$INDEX_ALLOCATION']['Attribute size']
 
-            if v[next_offset:next_offset+4] == b'\xB0\x00\x00\x00':
+            if v[next_offset:next_offset + 4] == b'\xB0\x00\x00\x00':
                 MFT_record['$BITMAP'] = parse_bitmap(bitmap, v, next_offset)
                 next_offset = MFT_record['$BITMAP']['Attribute first offset'] + \
                               MFT_record['$BITMAP']['Attribute size']
 
-            if v[next_offset:next_offset+4] == b'\x00\x01\x00\x00':
-                MFT_record['$LOGGED_UTILITY_STREAM'] = parse_logged_utility_stream(logged_utility_stream, v, next_offset)
+            if v[next_offset:next_offset + 4] == b'\x00\x01\x00\x00':
+                MFT_record['$LOGGED_UTILITY_STREAM'] = parse_logged_utility_stream(logged_utility_stream, v,
+                                                                                   next_offset)
                 next_offset = MFT_record['$LOGGED_UTILITY_STREAM']['Attribute first offset'] + \
                               MFT_record['$LOGGED_UTILITY_STREAM']['Attribute size']
 
-            if v[next_offset:next_offset+4] == b'\xFF\xFF\xFF\xFF':
+            if v[next_offset:next_offset + 4] == b'\xFF\xFF\xFF\xFF':
                 MFT[k] = copy.deepcopy(MFT_record)
             # else:
             #     # TODO: ne gère pas si un attribut après le data, comme $bitmap dans entrée 1
@@ -425,10 +439,10 @@ if __name__ == '__main__':
     with open(args.file, 'rb') as f:
         length_MFT = len(f.read())
         print(f'Starting the parsing of the $MFT..')
-        print(f'There is a total of {length_MFT//1024} entries in the MFT')
+        print(f'There is a total of {length_MFT // 1024} entries in the MFT')
         # 262144
 
-    i=0
+    i = 0
     j = length_MFT // 1024
     mftRecords = {}
     with open(args.file, 'rb') as f:
@@ -437,23 +451,18 @@ if __name__ == '__main__':
             try:
                 mftRecords[i] = chunk
                 chunk = f.read(MFT_RECORD_SIZE)
-                i+=1
+                i += 1
             except Exception:
                 print(f'There was a problem at entry number {i}')
                 break
-    print(len(mftRecords))
-    dict = {257:mftRecords[257], 258:mftRecords[258], 259:mftRecords[259]}
+
     MFT_parsed = parse_all(mftRecords)
-    print(f'The parsing has finished successfully \n{len(MFT_parsed)}/{length_MFT//1024} used entries in the MFT')
+    print(f'The parsing has finished successfully \n{len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
 
     if args.json:
         MFT_to_json(MFT_parsed, args.json)
 
     if args.csv:
-         MFT_to_csv(MFT_parsed, args.csv)
-
-
-
-
-
-
+        print(f'Writting to a CSV file.. this operation may take some time')
+        MFT_to_csv(MFT_parsed, args.csv)
+        print(f'Process finished !')
