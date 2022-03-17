@@ -1,4 +1,6 @@
 import os
+import time
+import subprocess
 from argparse import ArgumentParser
 
 
@@ -22,5 +24,8 @@ if __name__ == '__main__':
         try:
             create(args.destination + "\\" + str(n), args.size)
             n += 1
+            time.sleep(2)
         except IOError:
             break
+
+    p = subprocess.call(["cd .\\sleutkit\\bin && ifind.exe -h"], shell=True)
