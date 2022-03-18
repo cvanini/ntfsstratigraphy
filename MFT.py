@@ -1,3 +1,14 @@
+#### Céline Vanini
+#### 02.03.2021
+
+'''MFT parser : extract the entries attributes informations based on offset values.
+Principal attributes that can be recovered are $STANDARD_INFORMATION, $FILE_NAME and $DATA.
+For the other attributes, only the header is parsed (rest of info not necessary in this context).
+Will be managed afterwards.
+
+Sources : File system forensic analysis (B. Carrier, 2005) and https://flatcap.github.io/linux-ntfs/ntfs/attributes/index.html
+'''
+
 import copy
 import struct
 from ressources.dict import *
@@ -16,8 +27,6 @@ MFT_record = {
 
 
 # TODO: gérer les BAAD
-# valeurs de vérification ?
-# https://flatcap.github.io/linux-ntfs/ntfs/attributes/index.html
 # Gérer les non-base MFT entry (lorsque besoin de + d'une entrée pour stocker tous les attributs d'un fichier)
 # -> ils vont avoir un $ATTRIBUTE_LIST (0x20000000)
 def parse_header(header, raw_record):
@@ -104,7 +113,7 @@ def parse_standard(standard, raw_record, next_offset):
     else:
         content_offset = standard['Content start offset']
     record = record[content_offset:]
-    # if standard['Resident'] == 0:
+
     standard['Creation time'] = convert_filetime(struct.unpack("<Q", record[:8])[0])
     standard['Modification time'] = convert_filetime(struct.unpack("<Q", record[8:16])[0])
     standard['Entry modification time'] = convert_filetime(struct.unpack("<Q", record[16:24])[0])
@@ -389,10 +398,22 @@ def parse_all(records_dict):
                 next_offset = MFT_record['$VOLUME_INFORMATION']['Attribute first offset'] + \
                               MFT_record['$VOLUME_INFORMATION']['Attribute size']
 
-            if v[next_offset:next_offset + 4] == b'\x80\x00\x00\x00':
-                MFT_record['$DATA'] = parse_data(data, v, next_offset, k)
-                next_offset = MFT_record['$DATA']['Attribute first offset'] + \
-                              MFT_record['$DATA']['Attribute size']
+            datas =[]
+            while True:
+                if v[next_offset:next_offset + 4] == b'\x80\x00\x00\x00':
+                    MFT_record['$DATA'] = parse_data(data, v, next_offset, k)
+                    next_offset = MFT_record['$DATA']['Attribute first offset'] + \
+                                  MFT_record['$DATA']['Attribute size']
+
+                    if v[next_offset:next_offset + 4] == b'\x80\x00\x00\x00':
+                        datas.append(data['Run List'])
+                        MFT_record['$FILE_NAME'] = parse_filename(filename, v, next_offset)
+                        next_offset = MFT_record['$FILE_NAME']['Attribute first offset'] + MFT_record['$FILE_NAME'][
+                            'Attribute size']
+                        filenames.append(filename['Filename'])
+                        MFT_record['$FILE_NAME']['Filename'] = filenames
+                else:
+                    break
 
             if v[next_offset:next_offset + 4] == b'\x90\x00\x00\x00':
                 MFT_record['$INDEX_ROOT'] = parse_index_root(index_root, v, next_offset)
@@ -447,7 +468,7 @@ if __name__ == '__main__':
     mftRecords = {}
     with open(args.file, 'rb') as f:
         chunk = f.read(MFT_RECORD_SIZE)
-        while i < j:
+        while i < 8:
             try:
                 mftRecords[i] = chunk
                 chunk = f.read(MFT_RECORD_SIZE)

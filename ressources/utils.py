@@ -1,4 +1,9 @@
-import csv, json
+#### Céline Vanini
+
+'''accessory functions for conversion'''
+
+import csv
+import json
 from datetime import datetime, timedelta
 
 
