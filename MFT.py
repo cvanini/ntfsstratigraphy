@@ -69,9 +69,10 @@ def parse_header(header, raw_record):
         header['Allocation flag (verbose)'] = 'Unknown allocation flag'
         # raise Exception("Invalid value for Allocation flag - possible values (00, 01, 02, 03)")
 
-    header['Entry logical size'] = struct.unpack("<I", raw_record[28:32])[0]
+    header['Entry logical size'] = struct.unpack("<I", raw_record[24:28])[0]
     header['Entry physical size'] = struct.unpack("<I", raw_record[28:32])[0]
-    # TODO: gérer base record (32:40) cf. https://flatcap.github.io/linux-ntfs/ntfs/concepts/file_record.html#:~:text=The%20Base%20Record%20contains%20the,stored%20in%20an%20ATTRIBUTE_LIST%20attribute.&text=The%20Attribute%20Id%20that%20will,each%20time%20it%20is%20used.
+    header['Base record reference'] = struct.unpack("<Q", raw_record[32:40])[0]
+    header['Next attribute ID'] = struct.unpack("<H", raw_record[40:42])[0]
     header['Entry number'] = struct.unpack("<I", raw_record[44:48])[0]
 
     MFT_record['header'] = header
@@ -83,8 +84,24 @@ def parse_attribute_header(record, dict):
     # includes the header ~of the header
     dict['Attribute size'] = struct.unpack("<I", record[4:8])[0]
     dict['Resident'] = struct.unpack("<B", record[8:9])[0]
-    dict['Content start offset'] = struct.unpack("<H", record[10:12])[0]
+    dict['Attribute name length'] = struct.unpack("<B", record[9:10])[0]
+    dict['Offset to name'] = struct.unpack("<H", record[10:12])[0]
+    dict['Flags'] = struct.unpack("<H", record[12:14])[0]
+    if dict['Flags'] == 1 :
+        dict['Flags (verbose)'] = 'compressed'
+    elif dict['Flags'] == 16384:
+        dict['Flags (verbose)'] = 'encrypted'
+    elif dict['Flags'] == 32768:
+        dict['Flags (verbose)'] = 'sparse'
+    elif dict['Flags'] == 0:
+        pass
+    else:
+        dict['Flags (verbose)'] = 'unknown'
 
+    dict['Attribute ID'] = struct.unpack("<H", record[14:16])[0]
+    #dict['Content start offset'] = struct.unpack("<H", record[10:12])[0]
+
+    '''Run List considered only in the $DATA attribute'''
     if dict['Resident'] == 0:
         dict['Resident (verbose)'] = '00 (Resident content)'
         # length of attribute without header
@@ -350,98 +367,98 @@ def parse_all(records_dict):
             pass
         else:
             next_offset = header['First attribute offset']
+            while v[next_offset:next_offset+4] != b'\xFF\xFF\xFF\xFF':
+                if v[next_offset:next_offset + 4] == b'\x10\x00\x00\x00':
+                    MFT_record['$STANDARD_INFORMATION'] = parse_standard(standard, v, next_offset)
+                    next_offset = MFT_record['$STANDARD_INFORMATION']['Attribute first offset'] + \
+                                  MFT_record['$STANDARD_INFORMATION']['Attribute size']
 
-            if v[next_offset:next_offset + 4] == b'\x10\x00\x00\x00':
-                MFT_record['$STANDARD_INFORMATION'] = parse_standard(standard, v, next_offset)
-                next_offset = MFT_record['$STANDARD_INFORMATION']['Attribute first offset'] + \
-                              MFT_record['$STANDARD_INFORMATION']['Attribute size']
+                if v[next_offset:next_offset + 4] == b'\x20\x00\x00\x00':
+                    MFT_record['$ATTRIBUTE_LIST'] = parse_attribute_list(attribute_list, v, next_offset)
+                    next_offset = MFT_record['$ATTRIBUTE_LIST']['Attribute first offset'] + \
+                                  MFT_record['$ATTRIBUTE_LIST']['Attribute size']
 
-            if v[next_offset:next_offset + 4] == b'\x20\x00\x00\x00':
-                MFT_record['$ATTRIBUTE_LIST'] = parse_attribute_list(attribute_list, v, next_offset)
-                next_offset = MFT_record['$ATTRIBUTE_LIST']['Attribute first offset'] + \
-                              MFT_record['$ATTRIBUTE_LIST']['Attribute size']
-
-            while True:
-                if v[next_offset:next_offset + 4] == b'\x30\x00\x00\x00':
-                    MFT_record['$FILE_NAME'] = parse_filename(filename, v, next_offset)
-                    next_offset = MFT_record['$FILE_NAME']['Attribute first offset'] + MFT_record['$FILE_NAME'][
-                        'Attribute size']
-
+                while True:
                     if v[next_offset:next_offset + 4] == b'\x30\x00\x00\x00':
-                        filenames = []
-                        filenames.append(filename['Filename'])
                         MFT_record['$FILE_NAME'] = parse_filename(filename, v, next_offset)
                         next_offset = MFT_record['$FILE_NAME']['Attribute first offset'] + MFT_record['$FILE_NAME'][
                             'Attribute size']
-                        filenames.append(filename['Filename'])
-                        MFT_record['$FILE_NAME']['Filename'] = filenames
-                else:
-                    break
 
-            if v[next_offset:next_offset + 4] == b'\x40\x00\x00\x00':
-                MFT_record['$OBJECT_ID'] = parse_objectid(object_id, v, next_offset)
-                next_offset = MFT_record['$OBJECT_ID']['Attribute first offset'] + \
-                              MFT_record['$OBJECT_ID']['Attribute size']
+                        if v[next_offset:next_offset + 4] == b'\x30\x00\x00\x00':
+                            filenames = []
+                            filenames.append(filename['Filename'])
+                            MFT_record['$FILE_NAME'] = parse_filename(filename, v, next_offset)
+                            next_offset = MFT_record['$FILE_NAME']['Attribute first offset'] + MFT_record['$FILE_NAME'][
+                                'Attribute size']
+                            filenames.append(filename['Filename'])
+                            MFT_record['$FILE_NAME']['Filename'] = filenames
+                    else:
+                        break
 
-            if v[next_offset:next_offset + 4] == b'\x50\x00\x00\x00':
-                MFT_record['$SECURITY_DESCRIPTOR'] = parse_security_descriptor(security_descriptor, v, next_offset)
-                next_offset = MFT_record['$SECURITY_DESCRIPTOR']['Attribute first offset'] + \
-                              MFT_record['$SECURITY_DESCRIPTOR']['Attribute size']
+                if v[next_offset:next_offset + 4] == b'\x40\x00\x00\x00':
+                    MFT_record['$OBJECT_ID'] = parse_objectid(object_id, v, next_offset)
+                    next_offset = MFT_record['$OBJECT_ID']['Attribute first offset'] + \
+                                  MFT_record['$OBJECT_ID']['Attribute size']
 
-            if v[next_offset:next_offset + 4] == b'\x60\x00\x00\x00':
-                MFT_record['$VOLUME_NAME'] = parse_volume_name(volume_name, v, next_offset)
-                next_offset = MFT_record['$VOLUME_NAME']['Attribute first offset'] + \
-                              MFT_record['$VOLUME_NAME']['Attribute size']
+                if v[next_offset:next_offset + 4] == b'\x50\x00\x00\x00':
+                    MFT_record['$SECURITY_DESCRIPTOR'] = parse_security_descriptor(security_descriptor, v, next_offset)
+                    next_offset = MFT_record['$SECURITY_DESCRIPTOR']['Attribute first offset'] + \
+                                  MFT_record['$SECURITY_DESCRIPTOR']['Attribute size']
 
-            if v[next_offset:next_offset + 4] == b'\x70\x00\x00\x00':
-                MFT_record['$VOLUME_INFORMATION'] = parse_volume_information(volume_information, v, next_offset)
-                next_offset = MFT_record['$VOLUME_INFORMATION']['Attribute first offset'] + \
-                              MFT_record['$VOLUME_INFORMATION']['Attribute size']
+                if v[next_offset:next_offset + 4] == b'\x60\x00\x00\x00':
+                    MFT_record['$VOLUME_NAME'] = parse_volume_name(volume_name, v, next_offset)
+                    next_offset = MFT_record['$VOLUME_NAME']['Attribute first offset'] + \
+                                  MFT_record['$VOLUME_NAME']['Attribute size']
 
-            datas =[]
-            while True:
-                if v[next_offset:next_offset + 4] == b'\x80\x00\x00\x00':
-                    MFT_record['$DATA'] = parse_data(data, v, next_offset, k)
-                    next_offset = MFT_record['$DATA']['Attribute first offset'] + \
-                                  MFT_record['$DATA']['Attribute size']
+                if v[next_offset:next_offset + 4] == b'\x70\x00\x00\x00':
+                    MFT_record['$VOLUME_INFORMATION'] = parse_volume_information(volume_information, v, next_offset)
+                    next_offset = MFT_record['$VOLUME_INFORMATION']['Attribute first offset'] + \
+                                  MFT_record['$VOLUME_INFORMATION']['Attribute size']
 
+                datas =[]
+                while True:
                     if v[next_offset:next_offset + 4] == b'\x80\x00\x00\x00':
-                        datas.append(data['Run List'])
-                        MFT_record['$FILE_NAME'] = parse_filename(filename, v, next_offset)
-                        next_offset = MFT_record['$FILE_NAME']['Attribute first offset'] + MFT_record['$FILE_NAME'][
-                            'Attribute size']
-                        filenames.append(filename['Filename'])
-                        MFT_record['$FILE_NAME']['Filename'] = filenames
-                else:
-                    break
+                        MFT_record['$DATA'] = parse_data(data, v, next_offset, k)
+                        next_offset = MFT_record['$DATA']['Attribute first offset'] + \
+                                      MFT_record['$DATA']['Attribute size']
 
-            if v[next_offset:next_offset + 4] == b'\x90\x00\x00\x00':
-                MFT_record['$INDEX_ROOT'] = parse_index_root(index_root, v, next_offset)
-                next_offset = MFT_record['$INDEX_ROOT']['Attribute first offset'] + \
-                              MFT_record['$INDEX_ROOT']['Attribute size']
+                        if v[next_offset:next_offset + 4] == b'\x80\x00\x00\x00':
+                            if data['Resident'] == 1:
+                                datas.append(data['Run list'])
+                            MFT_record['$DATA'] = parse_data(data, v, next_offset, k)
+                            next_offset = MFT_record['$DATA']['Attribute first offset'] + MFT_record['$DATA'][
+                                'Attribute size']
 
-            if v[next_offset:next_offset + 4] == b'\xA0\x00\x00\x00':
-                MFT_record['$INDEX_ALLOCATION'] = parse_index_allocation(index_allocation, v, next_offset)
-                next_offset = MFT_record['$INDEX_ALLOCATION']['Attribute first offset'] + \
-                              MFT_record['$INDEX_ALLOCATION']['Attribute size']
+                            if data['Resident'] == 1 and len(datas) != 0:
+                                datas.append(data['Run list'])
+                                MFT_record['$DATA']['Run list'] = datas
+                    else:
+                        break
 
-            if v[next_offset:next_offset + 4] == b'\xB0\x00\x00\x00':
-                MFT_record['$BITMAP'] = parse_bitmap(bitmap, v, next_offset)
-                next_offset = MFT_record['$BITMAP']['Attribute first offset'] + \
-                              MFT_record['$BITMAP']['Attribute size']
+                if v[next_offset:next_offset + 4] == b'\x90\x00\x00\x00':
+                    MFT_record['$INDEX_ROOT'] = parse_index_root(index_root, v, next_offset)
+                    next_offset = MFT_record['$INDEX_ROOT']['Attribute first offset'] + \
+                                  MFT_record['$INDEX_ROOT']['Attribute size']
 
-            if v[next_offset:next_offset + 4] == b'\x00\x01\x00\x00':
-                MFT_record['$LOGGED_UTILITY_STREAM'] = parse_logged_utility_stream(logged_utility_stream, v,
-                                                                                   next_offset)
-                next_offset = MFT_record['$LOGGED_UTILITY_STREAM']['Attribute first offset'] + \
-                              MFT_record['$LOGGED_UTILITY_STREAM']['Attribute size']
+                if v[next_offset:next_offset + 4] == b'\xA0\x00\x00\x00':
+                    MFT_record['$INDEX_ALLOCATION'] = parse_index_allocation(index_allocation, v, next_offset)
+                    next_offset = MFT_record['$INDEX_ALLOCATION']['Attribute first offset'] + \
+                                  MFT_record['$INDEX_ALLOCATION']['Attribute size']
 
-            if v[next_offset:next_offset + 4] == b'\xFF\xFF\xFF\xFF':
-                MFT[k] = copy.deepcopy(MFT_record)
-            # else:
-            #     # TODO: ne gère pas si un attribut après le data, comme $bitmap dans entrée 1
-            #     MFT_record['$DATA'] = parse_data(data, v, next_offset, k)
-            #     MFT[k] = copy.deepcopy(MFT_record)
+                if v[next_offset:next_offset + 4] == b'\xB0\x00\x00\x00':
+                    MFT_record['$BITMAP'] = parse_bitmap(bitmap, v, next_offset)
+                    next_offset = MFT_record['$BITMAP']['Attribute first offset'] + \
+                                  MFT_record['$BITMAP']['Attribute size']
+
+                if v[next_offset:next_offset + 4] == b'\x00\x01\x00\x00':
+                    MFT_record['$LOGGED_UTILITY_STREAM'] = parse_logged_utility_stream(logged_utility_stream, v,
+                                                                                       next_offset)
+                    next_offset = MFT_record['$LOGGED_UTILITY_STREAM']['Attribute first offset'] + \
+                                  MFT_record['$LOGGED_UTILITY_STREAM']['Attribute size']
+
+                #if v[next_offset:next_offset + 4] == b'\xFF\xFF\xFF\xFF':
+            MFT[k] = copy.deepcopy(MFT_record)
+                    #break
 
             MFT_record.clear()
 
@@ -468,7 +485,7 @@ if __name__ == '__main__':
     mftRecords = {}
     with open(args.file, 'rb') as f:
         chunk = f.read(MFT_RECORD_SIZE)
-        while i < 8:
+        while i < j:
             try:
                 mftRecords[i] = chunk
                 chunk = f.read(MFT_RECORD_SIZE)
