@@ -367,98 +367,103 @@ def parse_all(records_dict):
             pass
         else:
             next_offset = header['First attribute offset']
-            while v[next_offset:next_offset+4] != b'\xFF\xFF\xFF\xFF':
-                if v[next_offset:next_offset + 4] == b'\x10\x00\x00\x00':
-                    MFT_record['$STANDARD_INFORMATION'] = parse_standard(standard, v, next_offset)
-                    next_offset = MFT_record['$STANDARD_INFORMATION']['Attribute first offset'] + \
-                                  MFT_record['$STANDARD_INFORMATION']['Attribute size']
+            if v[next_offset:next_offset + 4] == b'\x10\x00\x00\x00':
+                MFT_record['$STANDARD_INFORMATION'] = parse_standard(standard, v, next_offset)
+                next_offset = MFT_record['$STANDARD_INFORMATION']['Attribute first offset'] + \
+                              MFT_record['$STANDARD_INFORMATION']['Attribute size']
 
-                if v[next_offset:next_offset + 4] == b'\x20\x00\x00\x00':
-                    MFT_record['$ATTRIBUTE_LIST'] = parse_attribute_list(attribute_list, v, next_offset)
-                    next_offset = MFT_record['$ATTRIBUTE_LIST']['Attribute first offset'] + \
-                                  MFT_record['$ATTRIBUTE_LIST']['Attribute size']
+            if v[next_offset:next_offset + 4] == b'\x20\x00\x00\x00':
+                MFT_record['$ATTRIBUTE_LIST'] = parse_attribute_list(attribute_list, v, next_offset)
+                next_offset = MFT_record['$ATTRIBUTE_LIST']['Attribute first offset'] + \
+                              MFT_record['$ATTRIBUTE_LIST']['Attribute size']
 
-                while True:
+            while True:
+                if v[next_offset:next_offset + 4] == b'\x30\x00\x00\x00':
+                    MFT_record['$FILE_NAME'] = parse_filename(filename, v, next_offset)
+                    next_offset = MFT_record['$FILE_NAME']['Attribute first offset'] + MFT_record['$FILE_NAME'][
+                        'Attribute size']
+
                     if v[next_offset:next_offset + 4] == b'\x30\x00\x00\x00':
+                        filenames = []
+                        filenames.append(filename['Filename'])
                         MFT_record['$FILE_NAME'] = parse_filename(filename, v, next_offset)
                         next_offset = MFT_record['$FILE_NAME']['Attribute first offset'] + MFT_record['$FILE_NAME'][
                             'Attribute size']
+                        filenames.append(filename['Filename'])
+                        MFT_record['$FILE_NAME']['Filename'] = filenames
+                else:
+                    break
 
-                        if v[next_offset:next_offset + 4] == b'\x30\x00\x00\x00':
-                            filenames = []
-                            filenames.append(filename['Filename'])
-                            MFT_record['$FILE_NAME'] = parse_filename(filename, v, next_offset)
-                            next_offset = MFT_record['$FILE_NAME']['Attribute first offset'] + MFT_record['$FILE_NAME'][
-                                'Attribute size']
-                            filenames.append(filename['Filename'])
-                            MFT_record['$FILE_NAME']['Filename'] = filenames
-                    else:
-                        break
+            if v[next_offset:next_offset + 4] == b'\x40\x00\x00\x00':
+                MFT_record['$OBJECT_ID'] = parse_objectid(object_id, v, next_offset)
+                next_offset = MFT_record['$OBJECT_ID']['Attribute first offset'] + \
+                              MFT_record['$OBJECT_ID']['Attribute size']
 
-                if v[next_offset:next_offset + 4] == b'\x40\x00\x00\x00':
-                    MFT_record['$OBJECT_ID'] = parse_objectid(object_id, v, next_offset)
-                    next_offset = MFT_record['$OBJECT_ID']['Attribute first offset'] + \
-                                  MFT_record['$OBJECT_ID']['Attribute size']
+            if v[next_offset:next_offset + 4] == b'\x50\x00\x00\x00':
+                MFT_record['$SECURITY_DESCRIPTOR'] = parse_security_descriptor(security_descriptor, v, next_offset)
+                next_offset = MFT_record['$SECURITY_DESCRIPTOR']['Attribute first offset'] + \
+                              MFT_record['$SECURITY_DESCRIPTOR']['Attribute size']
 
-                if v[next_offset:next_offset + 4] == b'\x50\x00\x00\x00':
-                    MFT_record['$SECURITY_DESCRIPTOR'] = parse_security_descriptor(security_descriptor, v, next_offset)
-                    next_offset = MFT_record['$SECURITY_DESCRIPTOR']['Attribute first offset'] + \
-                                  MFT_record['$SECURITY_DESCRIPTOR']['Attribute size']
+            if v[next_offset:next_offset + 4] == b'\x60\x00\x00\x00':
+                MFT_record['$VOLUME_NAME'] = parse_volume_name(volume_name, v, next_offset)
+                next_offset = MFT_record['$VOLUME_NAME']['Attribute first offset'] + \
+                              MFT_record['$VOLUME_NAME']['Attribute size']
 
-                if v[next_offset:next_offset + 4] == b'\x60\x00\x00\x00':
-                    MFT_record['$VOLUME_NAME'] = parse_volume_name(volume_name, v, next_offset)
-                    next_offset = MFT_record['$VOLUME_NAME']['Attribute first offset'] + \
-                                  MFT_record['$VOLUME_NAME']['Attribute size']
+            if v[next_offset:next_offset + 4] == b'\x70\x00\x00\x00':
+                MFT_record['$VOLUME_INFORMATION'] = parse_volume_information(volume_information, v, next_offset)
+                next_offset = MFT_record['$VOLUME_INFORMATION']['Attribute first offset'] + \
+                              MFT_record['$VOLUME_INFORMATION']['Attribute size']
 
-                if v[next_offset:next_offset + 4] == b'\x70\x00\x00\x00':
-                    MFT_record['$VOLUME_INFORMATION'] = parse_volume_information(volume_information, v, next_offset)
-                    next_offset = MFT_record['$VOLUME_INFORMATION']['Attribute first offset'] + \
-                                  MFT_record['$VOLUME_INFORMATION']['Attribute size']
+            datas =[]
+            while True:
+                if v[next_offset:next_offset + 4] == b'\x80\x00\x00\x00':
+                    MFT_record['$DATA'] = parse_data(data, v, next_offset, k)
+                    next_offset = MFT_record['$DATA']['Attribute first offset'] + \
+                                  MFT_record['$DATA']['Attribute size']
 
-                datas =[]
-                while True:
                     if v[next_offset:next_offset + 4] == b'\x80\x00\x00\x00':
+                        if data['Resident'] == 1:
+                            datas.append(data['Run list'])
                         MFT_record['$DATA'] = parse_data(data, v, next_offset, k)
-                        next_offset = MFT_record['$DATA']['Attribute first offset'] + \
-                                      MFT_record['$DATA']['Attribute size']
+                        next_offset = MFT_record['$DATA']['Attribute first offset'] + MFT_record['$DATA'][
+                            'Attribute size']
 
-                        if v[next_offset:next_offset + 4] == b'\x80\x00\x00\x00':
-                            if data['Resident'] == 1:
-                                datas.append(data['Run list'])
-                            MFT_record['$DATA'] = parse_data(data, v, next_offset, k)
-                            next_offset = MFT_record['$DATA']['Attribute first offset'] + MFT_record['$DATA'][
-                                'Attribute size']
+                        if data['Resident'] == 1 and len(datas) != 0:
+                            datas.append(data['Run list'])
+                            MFT_record['$DATA']['Run list'] = datas
+                else:
+                    break
 
-                            if data['Resident'] == 1 and len(datas) != 0:
-                                datas.append(data['Run list'])
-                                MFT_record['$DATA']['Run list'] = datas
-                    else:
-                        break
+            if v[next_offset:next_offset + 4] == b'\x90\x00\x00\x00':
+                MFT_record['$INDEX_ROOT'] = parse_index_root(index_root, v, next_offset)
+                next_offset = MFT_record['$INDEX_ROOT']['Attribute first offset'] + \
+                              MFT_record['$INDEX_ROOT']['Attribute size']
 
                 if v[next_offset:next_offset + 4] == b'\x90\x00\x00\x00':
                     MFT_record['$INDEX_ROOT'] = parse_index_root(index_root, v, next_offset)
                     next_offset = MFT_record['$INDEX_ROOT']['Attribute first offset'] + \
                                   MFT_record['$INDEX_ROOT']['Attribute size']
+                    MFT[k] = copy.deepcopy(MFT_record)
 
-                if v[next_offset:next_offset + 4] == b'\xA0\x00\x00\x00':
-                    MFT_record['$INDEX_ALLOCATION'] = parse_index_allocation(index_allocation, v, next_offset)
-                    next_offset = MFT_record['$INDEX_ALLOCATION']['Attribute first offset'] + \
-                                  MFT_record['$INDEX_ALLOCATION']['Attribute size']
+            if v[next_offset:next_offset + 4] == b'\xA0\x00\x00\x00':
+                MFT_record['$INDEX_ALLOCATION'] = parse_index_allocation(index_allocation, v, next_offset)
+                next_offset = MFT_record['$INDEX_ALLOCATION']['Attribute first offset'] + \
+                              MFT_record['$INDEX_ALLOCATION']['Attribute size']
 
-                if v[next_offset:next_offset + 4] == b'\xB0\x00\x00\x00':
-                    MFT_record['$BITMAP'] = parse_bitmap(bitmap, v, next_offset)
-                    next_offset = MFT_record['$BITMAP']['Attribute first offset'] + \
-                                  MFT_record['$BITMAP']['Attribute size']
+            if v[next_offset:next_offset + 4] == b'\xB0\x00\x00\x00':
+                MFT_record['$BITMAP'] = parse_bitmap(bitmap, v, next_offset)
+                next_offset = MFT_record['$BITMAP']['Attribute first offset'] + \
+                              MFT_record['$BITMAP']['Attribute size']
 
-                if v[next_offset:next_offset + 4] == b'\x00\x01\x00\x00':
-                    MFT_record['$LOGGED_UTILITY_STREAM'] = parse_logged_utility_stream(logged_utility_stream, v,
-                                                                                       next_offset)
-                    next_offset = MFT_record['$LOGGED_UTILITY_STREAM']['Attribute first offset'] + \
-                                  MFT_record['$LOGGED_UTILITY_STREAM']['Attribute size']
+            if v[next_offset:next_offset + 4] == b'\x00\x01\x00\x00':
+                MFT_record['$LOGGED_UTILITY_STREAM'] = parse_logged_utility_stream(logged_utility_stream, v,
+                                                                                   next_offset)
+                next_offset = MFT_record['$LOGGED_UTILITY_STREAM']['Attribute first offset'] + \
+                              MFT_record['$LOGGED_UTILITY_STREAM']['Attribute size']
 
-                #if v[next_offset:next_offset + 4] == b'\xFF\xFF\xFF\xFF':
-            MFT[k] = copy.deepcopy(MFT_record)
-                    #break
+            if v[next_offset:next_offset + 4] == b'\xFF\xFF\xFF\xFF':
+                MFT[k] = copy.deepcopy(MFT_record)
+
 
             MFT_record.clear()
 

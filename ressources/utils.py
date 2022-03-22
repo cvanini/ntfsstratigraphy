@@ -24,7 +24,7 @@ def MFT_to_json(dict, file):
 
 def MFT_to_csv(MFT, file):
     fieldnames = ['ID', 'FILE/BAAD', 'LSN', 'Hard link count', 'Allocation flag', 'Allocation flag (verbose)',
-                  'Entry number', 'SI creation time', 'SI modification time', 'SI entry modification time',
+                  'Entry number', 'Base record reference', 'SI creation time', 'SI modification time', 'SI entry modification time',
                   'SI last accessed time', 'File type', 'FN creation time', 'FN modification time',
                   'FN entry modification time', 'FN last accessed time', 'Parent entry number', 'Filename', 'Run list']
 
@@ -64,6 +64,7 @@ def MFT_to_csv(MFT, file):
                                   'Hard link count': value['header']['Hard link count'],
                                   'Allocation flag': value['header']['Allocation flag'],
                                   'Allocation flag (verbose)': value['header']['Allocation flag (verbose)'],
+                                  'Base record reference': value['header']['Base record reference'],
                                   'Entry number': value['header']['Entry number'], **si, **fn, **d}))
 
 def is_set(x, dict):
