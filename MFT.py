@@ -11,6 +11,7 @@ Sources : File system forensic analysis (B. Carrier, 2005) and https://flatcap.g
 
 import copy
 import struct
+import logging
 from ressources.dict import *
 from ressources.utils import *
 from ressources.ProgressBar import printProgressBar
@@ -481,8 +482,8 @@ if __name__ == '__main__':
     # TODO : un peu rustre d'ouvrir deux fois le fichier
     with open(args.file, 'rb') as f:
         length_MFT = len(f.read())
-        print(f'Starting the parsing of the $MFT..')
-        print(f'There is a total of {length_MFT // 1024} entries in the MFT')
+        logging.info(f'Starting the parsing of the $MFT..')
+        logging.info(f'There is a total of {length_MFT // 1024} entries in the MFT')
         # 262144
 
     i = 0
@@ -500,12 +501,12 @@ if __name__ == '__main__':
                 break
 
     MFT_parsed = parse_all(mftRecords)
-    print(f'The parsing has finished successfully \n{len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
+    logging.info(f'The parsing has finished successfully \n{len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
 
     if args.json:
         MFT_to_json(MFT_parsed, args.json)
 
     if args.csv:
-        print(f'Writting to a CSV file.. this operation may take some time')
+        logging.info(f'Writting to a CSV file.. this operation may take some time')
         MFT_to_csv(MFT_parsed, args.csv)
-        print(f'Process finished !')
+        logging.info(f'CSV file of the $MFT is written !')

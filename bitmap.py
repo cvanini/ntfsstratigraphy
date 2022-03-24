@@ -3,19 +3,24 @@
 
 import csv
 import json
+import logging
 import itertools
 from argparse import ArgumentParser
 from ressources.ProgressBar import printProgressBar
 
 
-
+# general method to parse the $Bitmap, check for each position if 1 or 0
 def parse_bitmap(data):
     res = list(itertools.chain.from_iterable([[1 if byte & 1 << n != 0 else 0 for n in range(8)] for byte in data]))
     return {n: res[n] for n in range(len(res))}
 
+
+# method for parsing the bitmap attribute in the entry 0 of the $MFT, indicating the entries allocated
+# used to check if the MFT.py does its job correctly ! (doesn't forget any entry)
 def parse_bitmap_attribute(data):
     res = list(itertools.chain.from_iterable([[1 if byte & 1 << n != 0 else 0 for n in range(8)] for byte in data]))
     return {n: res[n] for n in range(len(res)) if res[n] == 1}
+
 
 def bitmap_to_json(dict, file):
     with open(file, 'w') as outfile_json:
@@ -30,21 +35,17 @@ if __name__ == '__main__':
     # parser.add_argument('-e', '--excel', help='save output in a excel sheet', required=False)
     args = parser.parse_args()
 
-    print("Starting to parse the $Bitmap file/$BITMAP attribute")
+    logging.info("Starting to parse the $Bitmap file/$BITMAP attribute")
     with open(args.file, 'rb') as file:
         data = file.read()
         bitmap = parse_bitmap(data)
         bitmap_attribute = parse_bitmap_attribute(data)
-        # bitmap_to_json(bitmap, "bitmap.json")
-        # if args.number_cluster:
-        #     last_key = list(bitmap)[-1]
-        #     bitmap = bitmap | {n: 0 for n in range(last_key, args.number_cluster+1)}
 
     if args.attribute:
-        print(f'There are {len(bitmap_attribute)} entries used in the $MFT')
+        logging.info(f'There are {len(bitmap_attribute)} entries used in the $MFT')
 
     if args.csv:
-        print(f"Starting writting to CSV file..")
+        logging.info(f"Starting writting to CSV file..")
         fieldnames = ['Cluster #', 'Status']
         with open(args.csv, 'w', newline='') as csv_file:
             writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
@@ -56,19 +57,4 @@ if __name__ == '__main__':
                 writer.writerow({'Cluster #': k, 'Status': bitmap[k]})
                 n += 1
 
-    # takes some time
-    # if args.excel:
-    #     if args.excel.endswith(".xlsx"):
-    #         df = pd.read_csv(args.csv)
-    #         e = df.to_excel(args.excel, header=True, index=False)
-    #     else:
-    #         raise Exception("The specified destination file must be an .xlsx file")
-    #
-
-    print('Process finished !')
-
-
-
-
-
-
+        logging.info('CSV file of the $Bitmap is written !')

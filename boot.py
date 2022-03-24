@@ -3,8 +3,35 @@
 
 
 import struct
+import logging
 from argparse import ArgumentParser
 
+def parse_boot(filename):
+    with open(filename, 'rb') as file:
+        data = file.read()
+
+    logging.info(f'OEM_ID : {struct.unpack("<Q", data[3:11])[0]}')
+    logging.info(f'Bytes per sector : {struct.unpack("<H", data[11:13])[0]}')
+    logging.info(f'Sectors per cluster : {struct.unpack("<B", data[13:14])[0]}')
+    logging.info(f'Sectors count on volume : {struct.unpack("<Q", data[40:48])[0]}')
+    logging.info(f'Cluster # of the start of the MFT : {struct.unpack("<Q", data[48:56])[0]}')
+    logging.info(f'Cluster # of the start of the MFTmirr : {struct.unpack("<Q", data[56:64])[0]}')
+    entry_size = struct.unpack("<b", data[64:65])[0]
+    if entry_size < 0:
+        entry_size = -entry_size
+        logging.info(f'MFT entry size: : {(2**entry_size)}')
+    else:
+        logging.info(f'MFT entry size: : {entry_size}')
+    logging.info(f'Volume Serial #: : {struct.unpack("<Q", data[72:80])[0]}')
+
+
 if __name__ == '__main__':
-    parser = ArgumentParser(description='MFT parser : parse MFT entries and return details of each attributes')
-    parser.add_argument('-f', '--file', help='MFT file', required=True)
+    parser = ArgumentParser(description='boot parser : used to catch volume informations')
+    parser.add_argument('-f', '--file', help='boot file', required=True)
+    args = parser.parse_args()
+
+    logging.basicConfig(filename='volume_info.txt', format='%(message)s', level=logging.INFO)
+    logging.info('Starting to process the $Boot. Some informations about the volume :')
+
+    parse_boot(args.file)
+    logging.info('Process finished !')
