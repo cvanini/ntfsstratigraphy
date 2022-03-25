@@ -36,7 +36,7 @@ def extract(volume, stage, n):
     # command to copy the $Bitmap of the specified volume (entry 6) and parse it with the bitmap.py python script
     subprocess.run(['icat.exe', f'\\\\.\\{volume}', '6', '>', f"{curr}\\data\\{stage}\\{str(n)}\\$Bitmap"],
                    cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
-    bitmap.log(f"{curr}\\data\\{stage}\\{str(n)}", n)
+    bitmap.log(f"{curr}\\data\\{stage}", n)
     # command to copy the $MFT of the specified volume (entry 0) and parse it with the MFT.py python script
     subprocess.run(['icat.exe', f'\\\\.\\{volume}', '0', '>', f"{curr}\\data\\{stage}\\{str(n)}\\$MFT"],
                    cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
