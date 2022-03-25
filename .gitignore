@@ -3,7 +3,6 @@ __pycache__/
 /$MFT
 /outputs
 /data
-/sleuthkit
 test.py
 *.py[cod]
 *$py.class
