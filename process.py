@@ -6,7 +6,10 @@
 # python .\process.py -v "C:" -n "1" -s 10
 
 import os
+import MFT
 import time
+import boot
+import bitmap
 import random
 import shutil
 import logging
@@ -22,30 +25,29 @@ def extract(volume, stage, n):
     if n == 0:
         subprocess.run(['icat.exe', f'\\\\.\\{volume}', '7', '>', f"{curr}\\data\\{stage}\\{str(n)}\\$Boot"],
                        cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
-        subprocess.run(['python', 'boot.py', '-f', f"{curr}\\data\\{stage}\\{str(n)}\\$Boot"], cwd=f'{curr}\\', shell=True)
+        boot.log(f'{curr}\\data\\{stage}\\{str(n)}\\$Boot')
 
     # Parsing the $BITMAP attribute in the entry 0 of the $MFT (used for the MFT file itself..)
     # It contains the number of entries that are used in the $MFT, so can be compared with the result of the
     # MTF.py script, to be sure it parsed all entries.
     subprocess.run(['icat.exe', f'\\\\.\\{volume}', '0-176', '>', f"{curr}\\data\\{stage}\\{str(n)}\\MFT_bitmap"],
                    cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
-    subprocess.run(['python', 'bitmap.py', '-f', f"{curr}\\data\\{stage}\\{str(n)}\\MFT_bitmap", '-a'],
-                   cwd=f'{curr}\\', shell=True)
+    # command to copy the $Bitmap of the specified volume (entry 6) and parse it with the bitmap.py python script
+    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '6', '>', f"{curr}\\data\\{stage}\\{str(n)}\\$Bitmap"],
+                   cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
+    bitmap.log(f"{curr}\\data\\{stage}\\{str(n)}", n)
+    # subprocess.run(['python', 'bitmap.py', '-f', f"{curr}\\data\\{stage}\\{str(n)}\\$Bitmap", '-c',
+    #                 f"{curr}\\outputs\\{stage}\\Bitmap_{str(n)}.csv"],
+    #                cwd=f'{curr}\\', shell=True)
 
     # command to copy the $MFT of the specified volume (entry 0) and parse it with the MFT.py python script
     subprocess.run(['icat.exe', f'\\\\.\\{volume}', '0', '>', f"{curr}\\data\\{stage}\\{str(n)}\\$MFT"],
                    cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
-    subprocess.run(['python', 'MFT.py', '-f', f"{curr}\\data\\{stage}\\{str(n)}\\$MFT", '-c',
-                    f"{curr}\\outputs\\{stage}\\MFT_{str(n)}.csv"],
-                   cwd=f'{curr}\\', shell=True)
+    MFT.log(f"{curr}\\data\\{stage}\\{str(n)}\\$MFT", n)
 
-    # command to copy the $Bitmap of the specified volume (entry 6) and parse it with the bitmap.py python script
-    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '6', '>', f"{curr}\\data\\{stage}\\{str(n)}\\$Bitmap"],
-                   cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
-    subprocess.run(['python', 'bitmap.py', '-f', f"{curr}\\data\\{stage}\\{str(n)}\\$Bitmap", '-c',
-                    f"{curr}\\outputs\\{stage}\\Bitmap_{str(n)}.csv"],
-                   cwd=f'{curr}\\', shell=True)
-
+    # subprocess.run(['python', 'MFT.py', '-f', f"{curr}\\data\\{stage}\\{str(n)}\\$MFT", '-c',
+    #                 f"{curr}\\outputs\\{stage}\\MFT_{str(n)}.csv"],
+    #                cwd=f'{curr}\\', shell=True)
 
 # create files of the specified size, in bytes.
 def create(path, size):
@@ -85,19 +87,21 @@ if __name__ == '__main__':
     # parser.add_argument('-o', '--output', help='Destination directory for the $MFT and $bitmap files', required=True)
     args = parser.parse_args()
 
-    logging.basicConfig(filename='process.log', datefmt='[%d.%m.%Y %H:%M:%S]', level=logging.INFO)
-    logging.info('Starting to process')
-    logging.info(f'Current stage : {args.stage}')
+    curr = os.getcwd()
+    os.mkdir(f'{curr}\\data\\{args.stage}')
+    os.mkdir(f'{curr}\\outputs\\{args.stage}')
+
+    logging.basicConfig(filename=f'{curr}\\outputs\\{args.stage}\\process.txt', format='%(asctime)s - %(name)-12s: %(message)s',
+                        datefmt='[%d.%m.%Y %H:%M:%S]', level=logging.INFO)
+    logger = logging.getLogger('process')
+    logger.info('Starting to process')
+    logger.info(f'Current stage : {args.stage}')
 
     total, used, free = shutil.disk_usage(args.volume)
-    logging.info(f'The volume has a capacity of {total} bytes')
-
-    os.mkdir(os.getcwd() + f'\\data\\{args.stage}')
-    os.mkdir(os.getcwd() + f'\\outputs\\{args.stage}')
-
-    logging.info('Extracting $Bitmap, $Boot and $MFT at blank')
+    logger.info(f'The volume has a capacity of {total} bytes')
+    logger.info('Extracting $Bitmap, $Boot and $MFT at blank')
     extract(args.volume, args.stage, 0)
-    logging.info("Creating files..")
+    logger.info("Creating files..")
 
     n = 1
     while True:
@@ -115,15 +119,15 @@ if __name__ == '__main__':
 
             for i in range(1, len(total), 100):
                 if i == n:
-                    logging.info(f"File #{n} was just created ! Extracting the $Bitmap and the $MFT again")
+                    logger.info(f"File #{n} was just created ! Extracting the $Bitmap and the $MFT again")
                     extract(args.volume, args.stage, n)
 
         # Escaping the loop when an OS memory error is catched
         except IOError as e:
-            logging.info(f'{str(e)}')
+            logger.info(f'{str(e)}')
             break
 
-    logging.info('Extracting $Bitmap and $MFT at final stage..!')
+    logger.info('Extracting $Bitmap and $MFT at final stage..!')
     extract(args.volume, args.stage, n)
 
-    logging.info('Process finished !')
+    logger.info('Process finished !')

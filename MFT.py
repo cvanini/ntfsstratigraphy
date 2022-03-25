@@ -19,6 +19,8 @@ from argparse import ArgumentParser
 
 MFT_RECORD_SIZE = 1024
 
+MFT_logger = logging.getLogger('MFT')
+
 MFT_record = {
     'header': '',
     '$STANDARD_INFORMATION': '',
@@ -470,26 +472,16 @@ def parse_all(records_dict):
 
     return MFT
 
-
-if __name__ == '__main__':
-    parser = ArgumentParser(description='MFT parser : parse MFT entries and return details of each attributes')
-    parser.add_argument('-f', '--file', help='MFT file', required=True)
-    parser.add_argument('-c', '--csv', help='output MFT content into a csv file', required=False)
-    parser.add_argument('-j', '--json', help='output MFT content into a csv json', required=False)
-
-    args = parser.parse_args()
-
-    # TODO : un peu rustre d'ouvrir deux fois le fichier
-    with open(args.file, 'rb') as f:
+def main(filename, k):
+    with open(filename, 'rb') as f:
         length_MFT = len(f.read())
-        logging.info(f'Starting the parsing of the $MFT..')
-        logging.info(f'There is a total of {length_MFT // 1024} entries in the MFT')
+        MFT_logger.info(f'There is a total of {length_MFT // 1024} entries in the MFT')
         # 262144
 
     i = 0
     j = length_MFT // 1024
     mftRecords = {}
-    with open(args.file, 'rb') as f:
+    with open(filename, 'rb') as f:
         chunk = f.read(MFT_RECORD_SIZE)
         while i < j:
             try:
@@ -501,12 +493,54 @@ if __name__ == '__main__':
                 break
 
     MFT_parsed = parse_all(mftRecords)
-    logging.info(f'The parsing has finished successfully \n{len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
+    MFT_logger.info(f'The parsing has finished successfully \n{len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
 
-    if args.json:
-        MFT_to_json(MFT_parsed, args.json)
+    MFT_logger.info(f'Writting to a CSV file.. this operation may take some time')
+    MFT_to_csv(MFT_parsed, f'{filename}{k}.csv')
+    MFT_logger.info(f'CSV file of the $MFT is written !')
 
-    if args.csv:
-        logging.info(f'Writting to a CSV file.. this operation may take some time')
-        MFT_to_csv(MFT_parsed, args.csv)
-        logging.info(f'CSV file of the $MFT is written !')
+def log(path, k):
+    MFT_logger.info(f'Starting the parsing of the $MFT..')
+    main(path, k)
+    MFT_logger.info(f'Process finished !')
+
+
+if __name__ == '__main__':
+    parser = ArgumentParser(description='MFT parser : parse MFT entries and return details of each attributes')
+    parser.add_argument('-f', '--file', help='MFT file', required=True)
+    parser.add_argument('-c', '--csv', help='output MFT content into a csv file', required=False)
+    parser.add_argument('-j', '--json', help='output MFT content into a csv json', required=False)
+
+    args = parser.parse_args()
+
+    # TODO : un peu rustre d'ouvrir deux fois le fichier
+    # with open(args.file, 'rb') as f:
+    #     length_MFT = len(f.read())
+    #     logging.info(f'Starting the parsing of the $MFT..')
+    #     logging.info(f'There is a total of {length_MFT // 1024} entries in the MFT')
+    #     # 262144
+    #
+    # i = 0
+    # j = length_MFT // 1024
+    # mftRecords = {}
+    # with open(args.file, 'rb') as f:
+    #     chunk = f.read(MFT_RECORD_SIZE)
+    #     while i < j:
+    #         try:
+    #             mftRecords[i] = chunk
+    #             chunk = f.read(MFT_RECORD_SIZE)
+    #             i += 1
+    #         except Exception:
+    #             print(f'There was a problem at entry number {i}')
+    #             break
+    #
+    # MFT_parsed = parse_all(mftRecords)
+    # logging.info(f'The parsing has finished successfully \n{len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
+    #
+    # if args.json:
+    #     MFT_to_json(MFT_parsed, args.json)
+    #
+    # if args.csv:
+    #     logging.info(f'Writting to a CSV file.. this operation may take some time')
+    #     MFT_to_csv(MFT_parsed, args.csv)
+    #     logging.info(f'CSV file of the $MFT is written !')
