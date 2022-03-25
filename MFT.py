@@ -362,7 +362,7 @@ def parse_all(records_dict):
     n = 1
 
     for k, v in records_dict.items():
-        printProgressBar(n, len(records_dict), stage='parsing records')
+        printProgressBar(n, len(records_dict), stage='parsing records [$MFT]')
         n += 1
 
         MFT_record['header'] = parse_header(header, v)
@@ -472,8 +472,8 @@ def parse_all(records_dict):
 
     return MFT
 
-def main(filename, k):
-    with open(filename, 'rb') as f:
+def main(path, k):
+    with open(f"{path}\\{str(k)}\\$MFT", 'rb') as f:
         length_MFT = len(f.read())
         MFT_logger.info(f'There is a total of {length_MFT // 1024} entries in the MFT')
         # 262144
@@ -481,7 +481,7 @@ def main(filename, k):
     i = 0
     j = length_MFT // 1024
     mftRecords = {}
-    with open(filename, 'rb') as f:
+    with open(f"{path}\\{str(k)}\\$MFT", 'rb') as f:
         chunk = f.read(MFT_RECORD_SIZE)
         while i < j:
             try:
@@ -493,10 +493,10 @@ def main(filename, k):
                 break
 
     MFT_parsed = parse_all(mftRecords)
-    MFT_logger.info(f'The parsing has finished successfully \n{len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
+    MFT_logger.info(f'The parsing has finished successfully. {len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
 
     MFT_logger.info(f'Writting to a CSV file.. this operation may take some time')
-    MFT_to_csv(MFT_parsed, f'{filename}{k}.csv')
+    MFT_to_csv(MFT_parsed, f'{path}\\{filename}{k}.csv')
     MFT_logger.info(f'CSV file of the $MFT is written !')
 
 def log(path, k):

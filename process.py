@@ -14,6 +14,7 @@ import random
 import shutil
 import logging
 import subprocess
+from datetime import datetime, timedelta
 from argparse import ArgumentParser
 
 
@@ -36,18 +37,11 @@ def extract(volume, stage, n):
     subprocess.run(['icat.exe', f'\\\\.\\{volume}', '6', '>', f"{curr}\\data\\{stage}\\{str(n)}\\$Bitmap"],
                    cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
     bitmap.log(f"{curr}\\data\\{stage}\\{str(n)}", n)
-    # subprocess.run(['python', 'bitmap.py', '-f', f"{curr}\\data\\{stage}\\{str(n)}\\$Bitmap", '-c',
-    #                 f"{curr}\\outputs\\{stage}\\Bitmap_{str(n)}.csv"],
-    #                cwd=f'{curr}\\', shell=True)
-
     # command to copy the $MFT of the specified volume (entry 0) and parse it with the MFT.py python script
     subprocess.run(['icat.exe', f'\\\\.\\{volume}', '0', '>', f"{curr}\\data\\{stage}\\{str(n)}\\$MFT"],
                    cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
-    MFT.log(f"{curr}\\data\\{stage}\\{str(n)}\\$MFT", n)
+    MFT.log(f"{curr}\\data\\{stage}", n)
 
-    # subprocess.run(['python', 'MFT.py', '-f', f"{curr}\\data\\{stage}\\{str(n)}\\$MFT", '-c',
-    #                 f"{curr}\\outputs\\{stage}\\MFT_{str(n)}.csv"],
-    #                cwd=f'{curr}\\', shell=True)
 
 # create files of the specified size, in bytes.
 def create(path, size):
@@ -62,22 +56,27 @@ def create(path, size):
 
 def delete(path, filename):
     if os.path.exists(path + "\\" + filename):
-        os.remove()
+        # os.remove(path + "\\" + filename)
+        subprocess.run([f"del {path}\\{filename}"], shell=True)
 
 
 # manipulating timestamps with Powershell command lines
-def backdating(file, date):
-    if os.path.exists(file) and file.endswith('.txt'):
-        subprocess.run([f"$(Get-Item {file}).creationtime=$(Get-Date {date})"], shell=True)
-        subprocess.run([f"$(Get-Item {file}).lastaccesstime=$(Get-Date {date})"], shell=True)
-        subprocess.run([f"$(Get-Item {file}).lastwritetime=$(Get-Date {date})"], shell=True)
+def backdating(path):
+    file = os.listdir(path)[-1]
+    d = datetime.now(None) - timedelta(minutes=15)
+    d = datetime.strftime(d, "%d.%m.%Y %H:%M:%S")
+
+    if file.endswith('.txt'):
+        subprocess.run([f"$(Get-Item {file}).creationtime=$(Get-Date \"{d}\")"], shell=True)
+        subprocess.run([f"$(Get-Item {file}).lastaccesstime=$(Get-Date \"{d}\")"], shell=True)
+        subprocess.run([f"$(Get-Item {file}).lastwritetime=$(Get-Date \"{d}\")"], shell=True)
 
 
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('-s', '--size', help='Size of the file to be created (in bytes), if not specified, creates files of random size',
                         type=int, required=False)
-    parser.add_argument('-b', '--backdating', help='change the date of one file, requires to give a date', type=str, required=False)
+    parser.add_argument('-b', '--backdating', help='change the date of one file, requires to give a date', type=int, required=False)
     parser.add_argument('-d', '--delete', help='pseudo-randomly delete files, requires to give a number', type=str, required=False)
     parser.add_argument('-v', '--volume', help='Volume to process (i.e C:)', type=str, required=True)
     parser.add_argument('-n', '--stage', help='Stage of the test being processed (i.e 1_creation)', type=str,
@@ -89,9 +88,8 @@ if __name__ == '__main__':
 
     curr = os.getcwd()
     os.mkdir(f'{curr}\\data\\{args.stage}')
-    os.mkdir(f'{curr}\\outputs\\{args.stage}')
 
-    logging.basicConfig(filename=f'{curr}\\outputs\\{args.stage}\\process.txt', format='%(asctime)s - %(name)-12s: %(message)s',
+    logging.basicConfig(filename=f'{curr}\\data\\{args.stage}\\process.txt', format='%(asctime)s - %(name)-12s: %(message)s',
                         datefmt='[%d.%m.%Y %H:%M:%S]', level=logging.INFO)
     logger = logging.getLogger('process')
     logger.info('Starting to process')
@@ -117,10 +115,15 @@ if __name__ == '__main__':
             n += 1
             time.sleep(0.1)
 
-            for i in range(1, len(total), 100):
+            for i in range(1, total, 100):
                 if i == n:
                     logger.info(f"File #{n} was just created ! Extracting the $Bitmap and the $MFT again")
                     extract(args.volume, args.stage, n)
+
+            if args.backdating:
+                if n == args.backdating:
+                    backdating(f'{curr}\\data\\{args.stage}\\')
+
 
         # Escaping the loop when an OS memory error is catched
         except IOError as e:

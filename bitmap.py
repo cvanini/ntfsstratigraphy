@@ -2,7 +2,6 @@
 #### 02.03.2021
 
 import csv
-import json
 import logging
 import itertools
 from argparse import ArgumentParser
@@ -24,20 +23,15 @@ def parse_bitmap_attribute(data):
     return {n: res[n] for n in range(len(res)) if res[n] == 1}
 
 
-# def bitmap_to_json(dict, file):
-#     with open(file, 'w') as outfile_json:
-#         json.dump(dict, outfile_json, indent=4)
-
-
 def main(path, k):
-    with open(path + '\\$Bitmap', 'rb') as file:
+    with open(f'{path}\\{str(k)}\\$Bitmap', 'rb') as file:
         data = file.read()
         bitmap = parse_bitmap(data)
-        to_csv(path + f'_{str(k)}.csv', bitmap)
+        to_csv(f'{path}\\Bitmap_{str(k)}.csv', bitmap)
 
 
-def main_attribute(path):
-    with open(path + '\\MFT_bitmap', 'rb') as file:
+def main_attribute(path, k):
+    with open(f'{path}\\{str(k)}\\MFT_bitmap', 'rb') as file:
         data = file.read()
         bitmap_attribute = parse_bitmap_attribute(data)
 
@@ -60,10 +54,9 @@ def to_csv(path, bitmap):
 
 def log(path, k):
     bitmap_logger.info("Starting to parse the $Bitmap file/$BITMAP attribute")
-    main_attribute(path)
+    main_attribute(path, k)
     main(path, k)
     bitmap_logger.info("Process finished !")
-
 
 
 
