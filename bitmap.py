@@ -35,8 +35,6 @@ def main_attribute(path, k):
         data = file.read()
         bitmap_attribute = parse_bitmap_attribute(data)
 
-    bitmap_logger.info(f'There are {len(bitmap_attribute)} entries used in the $MFT')
-
 def to_csv(path, bitmap):
     bitmap_logger.info(f"Starting writting to CSV file..")
     fieldnames = ['Cluster #', 'Status']
