@@ -104,13 +104,14 @@ if __name__ == '__main__':
     n = 1
     while True:
         try:
-            if args.size:
-                # fixed file size
-                create(args.volume + "\\" + str(n), args.size)
-            else:
-                # random file size : 10 bytes to 100 Mb
-                random_size = random.randint(100, 100 * 1024 * 1024)
-                create(args.volume + "\\" + str(n), random_size)
+            create(args.volume + "\\" + str(n), args.size)
+            # if args.size:
+            #     # fixed file size
+            #     create(args.volume + "\\" + str(n), args.size)
+            # else:
+            #     # random file size : 10 bytes to 100 Mb
+            #     random_size = random.randint(100, 100 * 1024 * 1024)
+            #     create(args.volume + "\\" + str(n), random_size)
 
             n += 1
             time.sleep(0.1)
@@ -120,9 +121,9 @@ if __name__ == '__main__':
                     logger.info(f"File #{n} was just created ! Extracting the $Bitmap and the $MFT again")
                     extract(args.volume, args.stage, n)
 
-            if args.backdating:
-                if n == args.backdating:
-                    backdating(f'{curr}\\data\\{args.stage}\\')
+            # if args.backdating:
+            #     if n == args.backdating:
+            #         backdating(f'{curr}\\data\\{args.stage}\\')
 
 
         # Escaping the loop when an OS memory error is catched
