@@ -501,10 +501,7 @@ def main(path, k):
     MFT_logger.info(f'The parsing has finished successfully. {len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
 
     MFT_logger.info(f'Writting to a CSV file.. this operation may take some time')
-    print(path)
-
     MFT_to_csv(MFT_parsed, f"{path}\\MFT_{str(k)}.csv")
-
     MFT_logger.info(f'CSV file of the $MFT is written !')
 
 def log(path, k):
