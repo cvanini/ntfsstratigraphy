@@ -271,22 +271,27 @@ def parse_data(data, raw_record, offset, k):
         # left nibble = number of bytes that contains the position of the cluster in the pointer
         # right nibble = number of bytes that contains the number of cluster in the pointer
         first_off = data['Run list\'s start offset'] - 16
-        pointer_length = struct.unpack("<B", record[first_off:first_off + 1])[0]
-        left, right = pointer_length >> 4, pointer_length & 0x0F
-        first_off += 1
+        # pointer_length = struct.unpack("<B", record[first_off:first_off + 1])[0]
+        # left, right = pointer_length >> 4, pointer_length & 0x0F
+        # length = left + right
+        # first_off += 1
 
         # run list made of tuples : (position of clusters, number of clusters)
         run_list = []
-        i = 0
-        while i < 4:
+
+        while True:
+            pointer_length = struct.unpack("<B", record[first_off:first_off + 1])[0]
+            left, right = pointer_length >> 4, pointer_length & 0x0F
+            length = left + right
+            first_off += 1
+
             nb_cluster = int.from_bytes(record[first_off:first_off + right], 'little')
-            pos_cluster = int.from_bytes(record[first_off + right:first_off + left + right], 'little')
-            first_off += (left + right)
+            pos_cluster = int.from_bytes(record[first_off + right:first_off + length], 'little')
+            first_off += length
             run_list.append((pos_cluster, nb_cluster))
-            i += 1
+
             if record[first_off:first_off + 1] == b'\x00':
                 break
-
         data['Run list'] = run_list
 
     elif data['Resident'] == 0:
@@ -516,34 +521,33 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    # TODO : un peu rustre d'ouvrir deux fois le fichier
-    # with open(args.file, 'rb') as f:
-    #     length_MFT = len(f.read())
-    #     logging.info(f'Starting the parsing of the $MFT..')
-    #     logging.info(f'There is a total of {length_MFT // 1024} entries in the MFT')
-    #     # 262144
-    #
-    # i = 0
-    # j = length_MFT // 1024
-    # mftRecords = {}
-    # with open(args.file, 'rb') as f:
-    #     chunk = f.read(MFT_RECORD_SIZE)
-    #     while i < j:
-    #         try:
-    #             mftRecords[i] = chunk
-    #             chunk = f.read(MFT_RECORD_SIZE)
-    #             i += 1
-    #         except Exception:
-    #             print(f'There was a problem at entry number {i}')
-    #             break
-    #
-    # MFT_parsed = parse_all(mftRecords)
-    # logging.info(f'The parsing has finished successfully \n{len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
-    #
-    # if args.json:
-    #     MFT_to_json(MFT_parsed, args.json)
-    #
-    # if args.csv:
-    #     logging.info(f'Writting to a CSV file.. this operation may take some time')
-    #     MFT_to_csv(MFT_parsed, args.csv)
-    #     logging.info(f'CSV file of the $MFT is written !')
+    with open(args.file, 'rb') as f:
+        length_MFT = len(f.read())
+        logging.info(f'Starting the parsing of the $MFT..')
+        logging.info(f'There is a total of {length_MFT // 1024} entries in the MFT')
+        # 262144
+
+    i = 0
+    j = length_MFT // 1024
+    mftRecords = {}
+    with open(args.file, 'rb') as f:
+        chunk = f.read(MFT_RECORD_SIZE)
+        while i < j:
+            try:
+                mftRecords[i] = chunk
+                chunk = f.read(MFT_RECORD_SIZE)
+                i += 1
+            except Exception:
+                print(f'There was a problem at entry number {i}')
+                break
+
+    MFT_parsed = parse_all(mftRecords)
+    logging.info(f'The parsing has finished successfully \n{len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
+
+    if args.json:
+        MFT_to_json(MFT_parsed, args.json)
+
+    if args.csv:
+        logging.info(f'Writting to a CSV file.. this operation may take some time')
+        MFT_to_csv(MFT_parsed, args.csv)
+        logging.info(f'CSV file of the $MFT is written !')
