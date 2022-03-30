@@ -54,10 +54,9 @@ def create(path, size):
         os.fsync(file.fileno())
 
 
-def delete(path, filename):
-    if os.path.exists(path + "\\" + filename):
-        # os.remove(path + "\\" + filename)
-        subprocess.run([f"del {path}\\{filename}"], shell=True)
+def delete(path, k):
+    file = os.listdir(path)[-1]
+    subprocess.run(["del", f"{path}\\{str(k-5)}.txt"], shell=True)
 
 
 # manipulating timestamps with Powershell command lines
@@ -65,11 +64,12 @@ def backdating(path):
     file = os.listdir(path)[-1]
     d = datetime.now(None) - timedelta(minutes=15)
     d = datetime.strftime(d, "%d.%m.%Y %H:%M:%S")
+    logger.info(f"Backdating file {file} to {d}")
 
     if file.endswith('.txt'):
-        subprocess.run([f"$(Get-Item {file}).creationtime=$(Get-Date \"{d}\")"], shell=True)
-        subprocess.run([f"$(Get-Item {file}).lastaccesstime=$(Get-Date \"{d}\")"], shell=True)
-        subprocess.run([f"$(Get-Item {file}).lastwritetime=$(Get-Date \"{d}\")"], shell=True)
+        subprocess.run([f"$(Get-Item {path}\\{file}).creationtime=$(Get-Date \"{d}\")"], shell=True)
+        subprocess.run([f"$(Get-Item {path}\\{file}).lastaccesstime=$(Get-Date \"{d}\")"], shell=True)
+        subprocess.run([f"$(Get-Item {path}\\{file}).lastwritetime=$(Get-Date \"{d}\")"], shell=True)
 
 
 if __name__ == '__main__':
@@ -102,28 +102,36 @@ if __name__ == '__main__':
     logger.info("Creating files..")
 
     n = 1
-    while True:
+    while n < 10:
         try:
-            create(args.volume + "\\" + str(n), args.size)
-            # if args.size:
-            #     # fixed file size
-            #     create(args.volume + "\\" + str(n), args.size)
-            # else:
-            #     # random file size : 10 bytes to 100 Mb
-            #     random_size = random.randint(100, 100 * 1024 * 1024)
-            #     create(args.volume + "\\" + str(n), random_size)
+            # creating files directly from the command line :
+            # subprocess.run(["fsutil", "file", "createnew", f"{args.volume}\\{str(n)}.txt", f"{args.size}"])
+            if args.size:
+                # fixed file size
+                create(args.volume + "\\" + str(n), args.size)
+            else:
+                # random file size : 10 bytes to 10 Mb
+                random_size = random.randint(0, 10 * 1024 * 1024)
+                create(args.volume + "\\" + str(n), random_size)
 
             n += 1
-            time.sleep(0.1)
+            time.sleep(random.uniform(0.5, 1.5))
 
             for i in range(1, total, 100):
                 if i == n:
                     logger.info(f"File #{n} was just created ! Extracting the $Bitmap and the $MFT again")
                     extract(args.volume, args.stage, n)
 
-            # if args.backdating:
-            #     if n == args.backdating:
-            #         backdating(f'{curr}\\data\\{args.stage}\\')
+            #for j in range(50, max, 100):
+            #    if j == n:
+            #        extract(args.volume, args.stage, n)
+            #        delete(args.volume, n)
+            #        logger.info(f"File {n} was deleted")
+            #        extract(args.volume, args.stage, f"{n}_d")
+
+            #if args.backdating:
+            #    if n == args.backdating:
+            #        backdating(f'{args.volume}')
 
 
         # Escaping the loop when an OS memory error is catched
