@@ -271,22 +271,27 @@ def parse_data(data, raw_record, offset, k):
         # left nibble = number of bytes that contains the position of the cluster in the pointer
         # right nibble = number of bytes that contains the number of cluster in the pointer
         first_off = data['Run list\'s start offset'] - 16
-        pointer_length = struct.unpack("<B", record[first_off:first_off + 1])[0]
-        left, right = pointer_length >> 4, pointer_length & 0x0F
-        first_off += 1
+        # pointer_length = struct.unpack("<B", record[first_off:first_off + 1])[0]
+        # left, right = pointer_length >> 4, pointer_length & 0x0F
+        # length = left + right
+        # first_off += 1
 
         # run list made of tuples : (position of clusters, number of clusters)
         run_list = []
-        i = 0
-        while i < 4:
+
+        while True:
+            pointer_length = struct.unpack("<B", record[first_off:first_off + 1])[0]
+            left, right = pointer_length >> 4, pointer_length & 0x0F
+            length = left + right
+            first_off += 1
+
             nb_cluster = int.from_bytes(record[first_off:first_off + right], 'little')
-            pos_cluster = int.from_bytes(record[first_off + right:first_off + left + right], 'little')
-            first_off += (left + right)
+            pos_cluster = int.from_bytes(record[first_off + right:first_off + length], 'little')
+            first_off += length
             run_list.append((pos_cluster, nb_cluster))
-            i += 1
+
             if record[first_off:first_off + 1] == b'\x00':
                 break
-
         data['Run list'] = run_list
 
     elif data['Resident'] == 0:
@@ -513,7 +518,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    # TODO : un peu rustre d'ouvrir deux fois le fichier
     with open(args.file, 'rb') as f:
         length_MFT = len(f.read())
         logging.info(f'Starting the parsing of the $MFT..')

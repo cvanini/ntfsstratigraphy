@@ -43,6 +43,13 @@ def extract(volume, stage, n):
     MFT.log(f"{curr}\\data\\{stage}", n)
 
 
+def extract_USN_logfile(volume, stage):
+    curr = os.getcwd()
+    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '11', '>', f"{curr}\\data\\{stage}\\USN_journal"],
+                   cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
+    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '2', '>', f"{curr}\\data\\{stage}\\$LogFile"],
+                   cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
+
 # create files of the specified size, in bytes.
 def create(path, size):
     with open(str(path) + '.txt', 'wb') as file:
@@ -141,5 +148,6 @@ if __name__ == '__main__':
 
     logger.info('Extracting $Bitmap and $MFT at final stage..!')
     extract(args.volume, args.stage, n)
+    # extract_USN_logfile(args.volume, args.stage)
 
     logger.info('Process finished !')
