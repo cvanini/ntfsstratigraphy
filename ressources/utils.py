@@ -12,8 +12,7 @@ def convert_filetime(date_to_convert: int):
     win_date = datetime(1601, 1, 1, 0, 0, 0)
     timestamp = win_date + delta
 
-    # TODO: gérer la timezone
-    # besoin des millisecondes ?
+    # TODO: gérer la timezone ? donné en UTC
     return f'{datetime.strftime(timestamp, "%d.%m.%Y %H:%M:%S +0000")}'
 
 
@@ -25,7 +24,7 @@ def MFT_to_json(dict, file):
 def MFT_to_csv(MFT, file):
     fieldnames = ['ID', 'FILE/BAAD', 'LSN', 'Hard link count', 'Allocation flag', 'Allocation flag (verbose)',
                   'Entry number', 'Base record reference', 'SI creation time', 'SI modification time', 'SI entry modification time',
-                  'SI last accessed time', 'File type', 'FN creation time', 'FN modification time',
+                  'SI last accessed time', 'File type', 'USN', 'FN creation time', 'FN modification time',
                   'FN entry modification time', 'FN last accessed time', 'Parent entry number', 'Filename', 'Run list']
 
     with open(file, 'w', newline='', encoding='utf-8') as outfile_csv:
@@ -38,9 +37,12 @@ def MFT_to_csv(MFT, file):
                       'SI modification time': value['$STANDARD_INFORMATION']['Modification time'],
                       'SI entry modification time': value['$STANDARD_INFORMATION']['Entry modification time'],
                       'SI last accessed time': value['$STANDARD_INFORMATION']['Last accessed time'],
-                      'File type': value['$STANDARD_INFORMATION']['File type']}
+                      'File type': value['$STANDARD_INFORMATION']['File type'],
+                      'USN': ''}
+                if 'Update Sequence Number (USN)' in value['$STANDARD_INFORMATION']:
+                    si['USN'] = value['$STANDARD_INFORMATION']['Update Sequence Number (USN)']
             else:
-                si = {x: None for x in fieldnames[7:11]}
+                si = {x: None for x in fieldnames[8:13]}
 
             if '$FILE_NAME' in value:
                 fn = {'FN creation time': value['$FILE_NAME']['Creation time'],
@@ -50,13 +52,15 @@ def MFT_to_csv(MFT, file):
                       'Parent entry number': value['$FILE_NAME']['Parent entry number'],
                       'Filename': value['$FILE_NAME']['Filename']}
             else:
-                fn = {x: None for x in fieldnames[12:17]}
+                fn = {x: None for x in fieldnames[14:19]}
 
             if '$DATA' in value:
                 if 'Run list' in value['$DATA']:
                     d = {'Run list': value['$DATA']['Run list']}
                 else:
                     d = {'Run list': ''}
+            else:
+                d = {'Run list': ''}
 
             writer.writerow(dict({'ID': entry,
                                   'FILE/BAAD': value['header']['FILE/BAAD'],

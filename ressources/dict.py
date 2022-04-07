@@ -36,11 +36,11 @@ file_type = {
     6: 'Device',
     7: 'Normal',
     8: 'Temporary',
-    9: 'Fragmented File',
-    10: 'None',
+    9: 'Sparse File',
+    10: 'Reparse Point',
     11: 'Compressed File',
-    12: 'None',
-    13: 'None',
+    12: 'Offline',
+    13: 'Not Content Indexed',
     14: 'Encrypted File',
     15: 'None'
 }

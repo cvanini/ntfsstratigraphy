@@ -30,8 +30,8 @@ MFT_record = {
 
 
 # TODO: gérer les BAAD
-# Gérer les non-base MFT entry (lorsque besoin de + d'une entrée pour stocker tous les attributs d'un fichier)
-# -> ils vont avoir un $ATTRIBUTE_LIST (0x20000000)
+# TODO: Gérer les non-base MFT entry (lorsque besoin de + d'une entrée pour stocker tous les attributs d'un fichier)
+#  -> ils vont avoir un $ATTRIBUTE_LIST (0x20000000)
 def parse_header(header, raw_record):
     header.clear()
     if raw_record[:4] == b'\x42\x41\x41\44':
@@ -47,14 +47,13 @@ def parse_header(header, raw_record):
     header['$LogFile sequence number (LSN)'] = struct.unpack("<Q", raw_record[8:16])[0]
     # increments when the corresponding file is deleted
     header['Entry use counter'] = struct.unpack("<H", raw_record[16:18])[0]
-
     # Link count = how many directories referencing this MFT entry
     # If hard links were created for the file, this number is incremented by one for each link.
     header['Hard link count'] = struct.unpack("<H", raw_record[18:20])[0]
-    # equivalent to the header size:
+    # Equivalent to the header size:
     header['First attribute offset'] = struct.unpack("<H", raw_record[20:22])[0]
+    # Status of the file
     header['Allocation flag'] = struct.unpack("<H", raw_record[22:24])[0]
-
     if header['Allocation flag'] == 0:
         header['Allocation flag (verbose)'] = '00 (Deleted file)'
     elif header['Allocation flag'] == 1:
@@ -65,7 +64,7 @@ def parse_header(header, raw_record):
         header['Allocation flag (verbose)'] = '03 (Visible directory)'
     elif header['Allocation flag'] == 3:
         header['Allocation flag (verbose)'] = '04 (Extension)'
-    # TODO: vérifier les valeurs, dit que 0x08 est spécial index
+    # TODO: vérifier les valeurs, dit que 0x08 est spécial index, manque de la doc sur le sujet
     elif header['Allocation flag'] in (8, 9, 10, 11, 12):
         header['Allocation flag (verbose)'] = '(Special index)'
     else:
@@ -89,6 +88,7 @@ def parse_attribute_header(record, dict):
     dict['Resident'] = struct.unpack("<B", record[8:9])[0]
     dict['Attribute name length'] = struct.unpack("<B", record[9:10])[0]
     dict['Offset to name'] = struct.unpack("<H", record[10:12])[0]
+    # File type
     dict['Flags'] = struct.unpack("<H", record[12:14])[0]
     if dict['Flags'] == 1 :
         dict['Flags (verbose)'] = 'compressed'
@@ -102,9 +102,8 @@ def parse_attribute_header(record, dict):
         dict['Flags (verbose)'] = 'unknown'
 
     dict['Attribute ID'] = struct.unpack("<H", record[14:16])[0]
-    #dict['Content start offset'] = struct.unpack("<H", record[10:12])[0]
 
-    '''Run List considered only in the $DATA attribute'''
+    # Run List considered only in the $DATA attribute:
     if dict['Resident'] == 0:
         dict['Resident (verbose)'] = '00 (Resident content)'
         # length of attribute without header
@@ -120,6 +119,8 @@ def parse_attribute_header(record, dict):
 
 ########################## $STANDARD_INFORMATION ATTRIBUTE #############################################################
 
+# The $STANDARD_INFORMATION attribute can have a size that fits between 48 bytes to 72 bytes.
+# The USN is therefore not always attributed to files/directories
 def parse_standard(standard, raw_record, next_offset):
     standard.clear()
     standard['Attribute first offset'] = next_offset
@@ -140,6 +141,23 @@ def parse_standard(standard, raw_record, next_offset):
     standard['Last accessed time'] = convert_filetime(struct.unpack("<Q", record[24:32])[0])
     f_type = struct.unpack("<I", record[32:36])[0]
     standard['File type'] = is_set(f_type, file_type)
+    # Maximum allowed versions for file (0 means version numbering is disabled)
+    standard['Maximum number of versions'] = struct.unpack("<I", record[36:40])[0]
+    standard['Version number'] = struct.unpack("<I", record[40:44])[0]
+    standard['Class ID'] = struct.unpack("<I", record[44:48])[0]
+
+    if standard['Attribute size'] == 72:
+        # User owning the file
+        standard['Owner ID'] = struct.unpack("<I", record[48:52])[0]
+        # Not the SID, but a key for the SII Index in $Secure
+        standard['Security ID'] = struct.unpack("<I", record[52:56])[0]
+        # size of all streams
+        standard['Quota charged'] = struct.unpack("<Q", record[56:64])[0]
+        # Last update sequence number, direct index into the $UsnJrnl
+        standard['Update Sequence Number (USN)'] = struct.unpack("<Q", record[64:72])[0]
+
+
+
 
     return standard
 
@@ -271,10 +289,6 @@ def parse_data(data, raw_record, offset, k):
         # left nibble = number of bytes that contains the position of the cluster in the pointer
         # right nibble = number of bytes that contains the number of cluster in the pointer
         first_off = data['Run list\'s start offset'] - 16
-        # pointer_length = struct.unpack("<B", record[first_off:first_off + 1])[0]
-        # left, right = pointer_length >> 4, pointer_length & 0x0F
-        # length = left + right
-        # first_off += 1
 
         # run list made of tuples : (position of clusters, number of clusters)
         run_list = []
@@ -391,6 +405,7 @@ def parse_all(records_dict):
                     next_offset = MFT_record['$FILE_NAME']['Attribute first offset'] + MFT_record['$FILE_NAME'][
                         'Attribute size']
 
+                    # A file can have the two types of filename format (DOS and ?)
                     if v[next_offset:next_offset + 4] == b'\x30\x00\x00\x00':
                         filenames = []
                         filenames.append(filename['Filename'])
@@ -522,7 +537,6 @@ if __name__ == '__main__':
         length_MFT = len(f.read())
         logging.info(f'Starting the parsing of the $MFT..')
         logging.info(f'There is a total of {length_MFT // 1024} entries in the MFT')
-        # 262144
 
     i = 0
     j = length_MFT // 1024
