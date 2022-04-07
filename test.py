@@ -1,8 +1,9 @@
 import os
 import shutil
 import subprocess
+from pathlib import PureWindowsPath
 from argparse import ArgumentParser
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, WindowsPath
 import logging
 import boot
 from datetime import datetime, timedelta
@@ -31,5 +32,8 @@ if __name__ == '__main__':
     print(d)
     d2 = datetime.now(None) - timedelta(minutes=15)
     print(datetime.strftime(d2, "%d.%m.%Y %H:%M:%S"))
-
-
+    path = WindowsPath("C:\\Users\\Vanini\\Desktop")
+    #subprocess.run([f"$(Get-Item \"X:\\100.txt\").creationtime=$(Get-Date \"{d2}\")"], cwd='X:', shell=True)
+    #subprocess.run(['$(Get-Item", "C:\Users\Vanini\Desktop\Capture.PNG)'], shell=True)
+    file="Capture.PNG"
+    subprocess.run(["del", f"{path}\\{file}"], shell=True)
