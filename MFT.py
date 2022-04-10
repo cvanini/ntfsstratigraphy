@@ -54,22 +54,14 @@ def parse_header(header, raw_record):
     header['First attribute offset'] = struct.unpack("<H", raw_record[20:22])[0]
     # Status of the file
     header['Allocation flag'] = struct.unpack("<H", raw_record[22:24])[0]
-    if header['Allocation flag'] == 0:
-        header['Allocation flag (verbose)'] = '00 (Deleted file)'
-    elif header['Allocation flag'] == 1:
-        header['Allocation flag (verbose)'] = '01 (Visible file)'
-    elif header['Allocation flag'] == 2:
-        header['Allocation flag (verbose)'] = '02 (Deleted directory)'
-    elif header['Allocation flag'] == 3:
-        header['Allocation flag (verbose)'] = '03 (Visible directory)'
-    elif header['Allocation flag'] == 3:
-        header['Allocation flag (verbose)'] = '04 (Extension)'
-    # TODO: vérifier les valeurs, dit que 0x08 est spécial index, manque de la doc sur le sujet
-    elif header['Allocation flag'] in (8, 9, 10, 11, 12):
-        header['Allocation flag (verbose)'] = '(Special index)'
-    else:
-        header['Allocation flag (verbose)'] = 'Unknown allocation flag'
-        # raise Exception("Invalid value for Allocation flag - possible values (00, 01, 02, 03)")
+    match header['Allocation flag']:
+        case 0: header['Allocation flag (verbose)'] = '00 (Deleted file)'
+        case 1: header['Allocation flag (verbose)'] = '01 (Visible file)'
+        case 2: header['Allocation flag (verbose)'] = '02 (Deleted directory)'
+        case 3: header['Allocation flag (verbose)'] = '03 (Visible directory)'
+        case 4: header['Allocation flag (verbose)'] = '04 (Extension)'
+        case 8: header['Allocation flag (verbose)'] = '08 (Special index)'
+        case _: header['Allocation flag (verbose)'] = 'Unknown allocation flag'
 
     header['Entry logical size'] = struct.unpack("<I", raw_record[24:28])[0]
     header['Entry physical size'] = struct.unpack("<I", raw_record[28:32])[0]
@@ -86,20 +78,18 @@ def parse_attribute_header(record, dict):
     # includes the header ~of the header
     dict['Attribute size'] = struct.unpack("<I", record[4:8])[0]
     dict['Resident'] = struct.unpack("<B", record[8:9])[0]
-    dict['Attribute name length'] = struct.unpack("<B", record[9:10])[0]
+    # This part gives the number of caracter of the name. As encoded in utf-16, multiplied by 2 to consider 2 bytes.
+    dict['Attribute name length'] = struct.unpack("<B", record[9:10])[0]*2
     dict['Offset to name'] = struct.unpack("<H", record[10:12])[0]
     # File type
     dict['Flags'] = struct.unpack("<H", record[12:14])[0]
-    if dict['Flags'] == 1 :
-        dict['Flags (verbose)'] = 'compressed'
-    elif dict['Flags'] == 16384:
-        dict['Flags (verbose)'] = 'encrypted'
-    elif dict['Flags'] == 32768:
-        dict['Flags (verbose)'] = 'sparse'
-    elif dict['Flags'] == 0:
-        pass
-    else:
-        dict['Flags (verbose)'] = 'unknown'
+
+    match dict['Flags']:
+        case 0: dict['Flags (verbose)'] = 'None'
+        case 1: dict['Flags (verbose)'] = 'Compressed'
+        case 16384: dict['Flags (verbose)'] = 'Encrypted'
+        case 32768: dict['Flags (verbose)'] = 'Sparse'
+        case _ : dict['Flags (verbose)'] = 'Unknown'
 
     dict['Attribute ID'] = struct.unpack("<H", record[14:16])[0]
 
@@ -116,6 +106,20 @@ def parse_attribute_header(record, dict):
     else:
         raise Exception("Wrong value for Resident flag - possible values (00, 01)")
 
+    # Useful for directories, that have a name in the header attribute ($I30)
+    if dict['Attribute name length'] != 0 :
+        offset = dict['Offset to name']
+        dict['Name'] = record[offset:offset+dict['Attribute name length']].decode('utf-16')
+
+        match dict['Name']:
+            # Index of filenames
+            case '$I30': dict['Index type'] = 'Directory'
+            case '$SDH': dict['Index type'] = 'Security descriptors index'
+            case '$SII': dict['Index type'] = 'Security Ids index'
+            case '$O': dict['Index type'] = 'Object Ids or Owner Ids indexes'
+            case '$Q': dict['Index type'] = 'Quotas index'
+            case '$R': dict['Index type'] = 'Reparse Points index'
+            case _: dict['Index type'] = 'Unknown'
 
 ########################## $STANDARD_INFORMATION ATTRIBUTE #############################################################
 
@@ -155,9 +159,6 @@ def parse_standard(standard, raw_record, next_offset):
         standard['Quota charged'] = struct.unpack("<Q", record[56:64])[0]
         # Last update sequence number, direct index into the $UsnJrnl
         standard['Update Sequence Number (USN)'] = struct.unpack("<Q", record[64:72])[0]
-
-
-
 
     return standard
 
@@ -315,9 +316,44 @@ def parse_data(data, raw_record, offset, k):
 
     return data
 
+########################## $INDEX NODE HEADER ##########################################################################
 
+def parse_index_node_header(index_node, record):
+    index_node.clear()
+
+    index_node['Offset for 1st entry'] = struct.unpack('<I', record[0:4])[0]
+    index_node['Index entry total size'] = struct.unpack('<I', record[4:8])[0]
+    index_node['Index entry allocated size'] = struct.unpack('<I', record[8:12])[0]
+    index_node['Index flag'] = struct.unpack('<B', record[12:13])[0]
+
+    match index_node['Index flag']:
+        case 0: index_node['Index type'] = 'Small index (fits in $INDEX_ROOT)'
+        case 1: index_node['Index type'] = 'Large index (external allocation needed)'
+        case _: raise ValueError("Wrong flag value (only 0 or 1)")
+
+    return index_node
+
+########################## $INDEX ENTRY ################################################################################
+
+# Only for directory indexes for now
+def parse_index_entry(index_entry, index, record):
+    index_entry.clear()
+
+    index_entry['MFT file reference'] = struct.unpack('<Q', record[0:8])[0]
+    index_entry['Length of entry'] = struct.unpack('<H', record[8:10])[0]
+    index_entry['Length of stream'] = struct.unpack('<H', record[10:12])[0]
+    index_entry['Index entry flag'] = struct.unpack('<I', record[12:16])[0]
+
+    # The stream is a copy of the filename content in the MFT entry of the indexed file/sub-directory
+    match index['Index flag']:
+        case 0: index_entry['Index stream'] = record[16:16 +index['Length of content']]
+        case 1:
+
+    return index_entry
 ########################## $INDEX_ROOT ATTRIBUTE #######################################################################
-# TODO: parser le contenu comme donne des infos sur le contenu du répertoire
+
+# This attribute is always resident, always the root of the index tree and store a small list of index entries
+# 16 bytes header, followed by a node header and a list of index entries
 def parse_index_root(index_root, raw_record, next_offset):
     index_root.clear()
 
@@ -327,11 +363,33 @@ def parse_index_root(index_root, raw_record, next_offset):
     record = raw_record[next_offset:]
     index_root['Attribute first offset'] = next_offset
     parse_attribute_header(record, index_root)
+
+    # Parsing the index node header
+    start = index_root['Content start offset (resident)']
+    record = record[start:]
+    index_root['Attribute type ID'] = struct.unpack('<I', record[0:4])[0]
+    index_root['Type'] = attributes_ID[index_root['Attribute type ID']]
+    index_root['Collation rule'] = struct.unpack('<I', record[4:8])[0]
+    index_root['Index entry size'] = struct.unpack('<I', record[8:12])[0]
+    # Number of clusters or logarithm of the size (given in the boot sector)
+    index_root['Cluster per index record'] = struct.unpack('<B', record[12:13])[0]
+
+    index_root.update(parse_index_node_header(index_node, record[16:]))
+
+    # Parses only directory indexes for now
+    if index_root['Type'] = '$FILE_NAME':
+        match index_root['Index flag']:
+            case 0: index_root.update(parse_index_entry(index_entry, record[32:]))
+            case 1: pass
+            case _: raise ValueError('Invalid flag value (0 or 1)')
+
     return index_root
 
 
-########################## $INDEX_ALLOCATION ATTRIBUTE ##############################################################
+########################## $INDEX_ALLOCATION ATTRIBUTE #################################################################
 
+# This attribute is used when index entries cannot fit in the $INDEX_ROOT (Index flag = 1)
+# One index entry = one node in the sorted tree
 def parse_index_allocation(index_allocation, raw_record, next_offset):
     index_allocation.clear()
 
@@ -341,6 +399,14 @@ def parse_index_allocation(index_allocation, raw_record, next_offset):
     record = raw_record[next_offset:]
     index_allocation['Attribute first offset'] = next_offset
     parse_attribute_header(record, index_allocation)
+
+    content_offset = index_allocation['Attribute header size']
+    record = raw_record[content_offset:]
+
+    index_allocation['Initial VCN'] = struct.unpack('<Q', record[0:8])[0]
+    index_allocation['Final VCN'] = struct.unpack('<Q', record[8:16])[0]
+    index_allocation['Offset to data run'] = struct.unpack('<H', record[16:18])[0]
+
     return index_allocation
 
 
@@ -543,7 +609,7 @@ if __name__ == '__main__':
     mftRecords = {}
     with open(args.file, 'rb') as f:
         chunk = f.read(MFT_RECORD_SIZE)
-        while i < j:
+        while i < 7:
             try:
                 mftRecords[i] = chunk
                 chunk = f.read(MFT_RECORD_SIZE)

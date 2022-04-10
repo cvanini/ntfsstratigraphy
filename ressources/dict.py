@@ -45,6 +45,25 @@ file_type = {
     15: 'None'
 }
 
+attributes_ID = {
+    16: '$STANDARD_INFORMATION',
+    32: '$ATTRIBUTE_LIST',
+    48: '$FILE_NAME',
+    64: '$OBJECT_ID',
+    80: '$SECURITY_DESCRIPTOR',
+    96: '$VOLUME_NAME',
+    112: '$VOLUME_INFORMATION',
+    128: '$DATA',
+    144: '$INDEX_ROOT',
+    160: '$INDEX_ALLOCATION',
+    176: '$BITMAP',
+    192: '$REPARSE_POINT',
+    208: '$EA_INFORMATION',
+    224: '$EA',
+    256: '$LOGGED_UTILITY_STREAM'
+}
+
+
 
 
 attribute_list = {
@@ -116,6 +135,14 @@ data = {
     'Resident (verbose)': '',
     'Content size': '',
     'Content start offset (resident)': ''
+}
+
+index_node = {
+
+}
+
+index_entry = {
+
 }
 
 index_root = {
