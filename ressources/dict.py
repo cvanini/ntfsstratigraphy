@@ -46,6 +46,7 @@ file_type = {
 }
 
 attributes_ID = {
+    0: 'Unknown',
     16: '$STANDARD_INFORMATION',
     32: '$ATTRIBUTE_LIST',
     48: '$FILE_NAME',

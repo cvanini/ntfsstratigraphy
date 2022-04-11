@@ -119,7 +119,7 @@ def parse_attribute_header(record, dict):
             case '$O': dict['Index type'] = 'Object Ids or Owner Ids indexes'
             case '$Q': dict['Index type'] = 'Quotas index'
             case '$R': dict['Index type'] = 'Reparse Points index'
-            case _: dict['Index type'] = 'Unknown'
+            case _: pass
 
 ########################## $STANDARD_INFORMATION ATTRIBUTE #############################################################
 
@@ -265,6 +265,26 @@ def parse_volume_information(volume_information, raw_record, next_offset):
 
 ########################## $DATA ATTRIBUTE #############################################################################
 
+def run_list(first_off, record):
+
+    run_list = []
+    while True:
+        pointer_length = struct.unpack("<B", record[first_off:first_off + 1])[0]
+        left, right = pointer_length >> 4, pointer_length & 0x0F
+        length = left + right
+        first_off += 1
+
+        nb_cluster = int.from_bytes(record[first_off:first_off + right], 'little')
+        pos_cluster = int.from_bytes(record[first_off + right:first_off + length], 'little')
+        first_off += length
+        run_list.append((pos_cluster, nb_cluster))
+
+        if record[first_off:first_off + 1] == b'\x00':
+            break
+
+    return run_list
+
+
 def parse_data(data, raw_record, offset, k):
     data.clear()
 
@@ -292,22 +312,7 @@ def parse_data(data, raw_record, offset, k):
         first_off = data['Run list\'s start offset'] - 16
 
         # run list made of tuples : (position of clusters, number of clusters)
-        run_list = []
-
-        while True:
-            pointer_length = struct.unpack("<B", record[first_off:first_off + 1])[0]
-            left, right = pointer_length >> 4, pointer_length & 0x0F
-            length = left + right
-            first_off += 1
-
-            nb_cluster = int.from_bytes(record[first_off:first_off + right], 'little')
-            pos_cluster = int.from_bytes(record[first_off + right:first_off + length], 'little')
-            first_off += length
-            run_list.append((pos_cluster, nb_cluster))
-
-            if record[first_off:first_off + 1] == b'\x00':
-                break
-        data['Run list'] = run_list
+        data['Run list'] = run_list(first_off, record)
 
     elif data['Resident'] == 0:
         pass
@@ -321,14 +326,14 @@ def parse_data(data, raw_record, offset, k):
 def parse_index_node_header(index_node, record):
     index_node.clear()
 
-    index_node['Offset for 1st entry'] = struct.unpack('<I', record[0:4])[0]
+    index_node['Offset for 1st entry (starting node header)'] = struct.unpack('<I', record[0:4])[0]
     index_node['Index entry total size'] = struct.unpack('<I', record[4:8])[0]
     index_node['Index entry allocated size'] = struct.unpack('<I', record[8:12])[0]
     index_node['Index flag'] = struct.unpack('<B', record[12:13])[0]
 
     match index_node['Index flag']:
-        case 0: index_node['Index type'] = 'Small index (fits in $INDEX_ROOT)'
-        case 1: index_node['Index type'] = 'Large index (external allocation needed)'
+        case 0: index_node['Index flag (verbose)'] = 'Small index (fits in $INDEX_ROOT)'
+        case 1: index_node['Index flag (verbose)'] = 'Large index (external allocation needed)'
         case _: raise ValueError("Wrong flag value (only 0 or 1)")
 
     return index_node
@@ -338,18 +343,41 @@ def parse_index_node_header(index_node, record):
 # Only for directory indexes for now
 def parse_index_entry(index_entry, index, record):
     index_entry.clear()
-
-    index_entry['MFT file reference'] = struct.unpack('<Q', record[0:8])[0]
-    index_entry['Length of entry'] = struct.unpack('<H', record[8:10])[0]
-    index_entry['Length of stream'] = struct.unpack('<H', record[10:12])[0]
-    index_entry['Index entry flag'] = struct.unpack('<I', record[12:16])[0]
-
     # The stream is a copy of the filename content in the MFT entry of the indexed file/sub-directory
+    index['Filenames in directory'] = []
     match index['Index flag']:
-        case 0: index_entry['Index stream'] = record[16:16 +index['Length of content']]
-        case 1:
+        case 0:
+            while True:
+                try:
+                    index_entry.clear()
+                    index_entry['MFT file reference'] = struct.unpack('<Q', record[0:8])[0]
+                    index_entry['Length of entry'] = struct.unpack('<H', record[8:10])[0]
+                    index_entry['Length of stream'] = struct.unpack('<H', record[10:12])[0]
+                    index_entry['Index entry flag'] = struct.unpack('<I', record[12:16])[0]
 
-    return index_entry
+                    # match index_entry['Index entry flag']:
+                    #     case 1:
+                    #         index_entry['Index entry flag (verbose)'] = 'Child nodes exist'
+                    #         record = record[:index_entry['Length of entry']]
+                    #         index_entry['VCN'] = record[:-8]
+                    #     case 2:
+                    #         index_entry['Index entry flag (verbose)'] = 'Last entry in list'
+                    #     case 3:
+                    #         index_entry['Index entry flag (verbose)'] = ['Child nodes exists', 'Last entry in list']
+                    #     case _:
+                    #         print(index_entry['Index entry flag'])
+                    stream = record[16:]
+                    filename_length = struct.unpack("<B", stream[64:65])[0] * 2
+                    filename = stream[66:66 + filename_length].decode('utf-16')
+                    if filename :
+                        index['Filenames in directory'].append(filename)
+                    record = record[index_entry['Length of entry']:]
+                except Exception:
+                    break
+
+        case 1: pass
+
+    return index
 ########################## $INDEX_ROOT ATTRIBUTE #######################################################################
 
 # This attribute is always resident, always the root of the index tree and store a small list of index entries
@@ -364,7 +392,7 @@ def parse_index_root(index_root, raw_record, next_offset):
     index_root['Attribute first offset'] = next_offset
     parse_attribute_header(record, index_root)
 
-    # Parsing the index node header
+    # Parsing the index root header
     start = index_root['Content start offset (resident)']
     record = record[start:]
     index_root['Attribute type ID'] = struct.unpack('<I', record[0:4])[0]
@@ -373,13 +401,12 @@ def parse_index_root(index_root, raw_record, next_offset):
     index_root['Index entry size'] = struct.unpack('<I', record[8:12])[0]
     # Number of clusters or logarithm of the size (given in the boot sector)
     index_root['Cluster per index record'] = struct.unpack('<B', record[12:13])[0]
-
     index_root.update(parse_index_node_header(index_node, record[16:]))
 
     # Parses only directory indexes for now
-    if index_root['Type'] = '$FILE_NAME':
+    if index_root['Type'] == '$FILE_NAME':
         match index_root['Index flag']:
-            case 0: index_root.update(parse_index_entry(index_entry, record[32:]))
+            case 0: index_root.update(parse_index_entry(index_entry, index_root, record[32:]))
             case 1: pass
             case _: raise ValueError('Invalid flag value (0 or 1)')
 
@@ -401,11 +428,12 @@ def parse_index_allocation(index_allocation, raw_record, next_offset):
     parse_attribute_header(record, index_allocation)
 
     content_offset = index_allocation['Attribute header size']
-    record = raw_record[content_offset:]
+    record = record[content_offset:]
 
     index_allocation['Initial VCN'] = struct.unpack('<Q', record[0:8])[0]
     index_allocation['Final VCN'] = struct.unpack('<Q', record[8:16])[0]
     index_allocation['Offset to data run'] = struct.unpack('<H', record[16:18])[0]
+    index_allocation['Data run'] = run_list(index_allocation['Offset to data run']-16, record)
 
     return index_allocation
 
@@ -609,7 +637,7 @@ if __name__ == '__main__':
     mftRecords = {}
     with open(args.file, 'rb') as f:
         chunk = f.read(MFT_RECORD_SIZE)
-        while i < 7:
+        while i < 12:
             try:
                 mftRecords[i] = chunk
                 chunk = f.read(MFT_RECORD_SIZE)
