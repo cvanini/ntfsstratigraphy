@@ -345,9 +345,10 @@ def parse_index_entry(index_entry, index, record):
     index_entry.clear()
     # The stream is a copy of the filename content in the MFT entry of the indexed file/sub-directory
     index['Filenames in directory'] = []
+    length_stream = index['Index entry allocated size']-16
     match index['Index flag']:
         case 0:
-            while True:
+            while length_stream > 0:
                 try:
                     index_entry.clear()
                     index_entry['MFT file reference'] = struct.unpack('<Q', record[0:8])[0]
@@ -372,6 +373,7 @@ def parse_index_entry(index_entry, index, record):
                     if filename :
                         index['Filenames in directory'].append(filename)
                     record = record[index_entry['Length of entry']:]
+                    length_stream = length_stream-index_entry['Length of entry']
                 except Exception:
                     break
 
@@ -637,7 +639,7 @@ if __name__ == '__main__':
     mftRecords = {}
     with open(args.file, 'rb') as f:
         chunk = f.read(MFT_RECORD_SIZE)
-        while i < 12:
+        while i < j:
             try:
                 mftRecords[i] = chunk
                 chunk = f.read(MFT_RECORD_SIZE)
