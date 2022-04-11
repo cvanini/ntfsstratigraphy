@@ -109,7 +109,7 @@ if __name__ == '__main__':
     logger.info("Creating files..")
 
     n = 1
-    while n < 10:
+    while n < 12:
         try:
             # creating files directly from the command line :
             # subprocess.run(["fsutil", "file", "createnew", f"{args.volume}\\{str(n)}.txt", f"{args.size}"])

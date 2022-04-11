@@ -75,5 +75,35 @@ def is_set(x, dict):
     return [dict[n] for n in range(16) if x & 1 << n != 0]
 
 
+def parse_tree(MFT):
+    root_directory, root = 5, '.'
+
+    n = 0
+    p_ids = {}
+    ids = {}
+    p_ids[root_directory] = root
+    length = len(MFT)
+
+
+    for k, entry in MFT.items():
+        current_entry = entry['header']['Entry number']
+        if entry['$FILE_NAME']:
+            parent_entry = entry['$FILE_NAME']['Parent entry number']
+            current_filename = entry['$FILE_NAME']['Filename']
+            if isinstance(current_filename, list):
+                current_filename = current_filename[1]
+
+            # if parent_entry == root_directory:
+            #    entry['header']['Path'] = Path(f'{root}/{current_filename}')
+            if current_entry == root_directory:
+                entry['header']['Path'] = root
+
+            if parent_entry in p_ids:
+                entry['header']['Path'] = p_ids[parent_entry] + '\\' + current_filename
+                ids[current_entry] = current_filename
+
+    p_ids = ids
+    return MFT
+
 if __name__ == '__main__':
     pass

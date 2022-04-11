@@ -607,10 +607,11 @@ def main(path, k):
                 break
 
     MFT_parsed = parse_all(mftRecords)
-    MFT_logger.info(f'The parsing has finished successfully. {len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
+    MFT_parsed_ = parse_tree(MFT_parsed)
+    MFT_logger.info(f'The parsing has finished successfully. {len(MFT_parsed_)}/{length_MFT // 1024} used entries in the MFT')
 
     MFT_logger.info(f'Writting to a CSV file.. this operation may take some time')
-    MFT_to_csv(MFT_parsed, f"{path}\\MFT_{str(k)}.csv")
+    MFT_to_csv(MFT_parsed_, f"{path}\\MFT_{str(k)}.csv")
     MFT_logger.info(f'CSV file of the $MFT is written !')
 
 def log(path, k):
@@ -637,7 +638,7 @@ if __name__ == '__main__':
     mftRecords = {}
     with open(args.file, 'rb') as f:
         chunk = f.read(MFT_RECORD_SIZE)
-        while i < 12:
+        while i < 50:
             try:
                 mftRecords[i] = chunk
                 chunk = f.read(MFT_RECORD_SIZE)
@@ -647,12 +648,13 @@ if __name__ == '__main__':
                 break
 
     MFT_parsed = parse_all(mftRecords)
-    logging.info(f'The parsing has finished successfully \n{len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
+    MFT_parsed_ = parse_tree(MFT_parsed)
+    logging.info(f'The parsing has finished successfully \n{len(MFT_parsed_)}/{length_MFT // 1024} used entries in the MFT')
 
     if args.json:
-        MFT_to_json(MFT_parsed, args.json)
+        MFT_to_json(MFT_parsed_, args.json)
 
     if args.csv:
         logging.info(f'Writting to a CSV file.. this operation may take some time')
-        MFT_to_csv(MFT_parsed, args.csv)
+        MFT_to_csv(MFT_parsed_, args.csv)
         logging.info(f'CSV file of the $MFT is written !')
