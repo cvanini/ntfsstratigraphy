@@ -3,7 +3,7 @@ __pycache__/
 /$MFT
 /outputs
 /data
-test.py
+tests/test.py
 *.py[cod]
 *$py.class
 .idea/

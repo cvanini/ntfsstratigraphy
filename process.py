@@ -6,10 +6,8 @@
 # python .\process.py -v "C:" -n "1" -s 10
 
 import os
-import MFT
 import time
-import boot
-import bitmap
+from fsparser import bitmap, boot, MFT
 import random
 import shutil
 import logging

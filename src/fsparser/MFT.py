@@ -12,9 +12,9 @@ Sources : File system forensic analysis (B. Carrier, 2005) and https://flatcap.g
 import copy
 import struct
 import logging
-from ressources.dict import *
-from ressources.utils import *
-from ressources.ProgressBar import printProgressBar
+from fsparser.ressources.dict import *
+from fsparser.ressources.utils import *
+from fsparser.ressources.ProgressBar import printProgressBar
 from argparse import ArgumentParser
 
 MFT_RECORD_SIZE = 1024
@@ -373,6 +373,7 @@ def parse_index_entry(index_entry, index, record):
                     if filename :
                         index['Filenames in directory'].append(filename)
                     record = record[index_entry['Length of entry']:]
+                    length_stream = length_stream-index_entry['Length of entry']
                 except Exception:
                     break
 
@@ -639,7 +640,7 @@ if __name__ == '__main__':
     mftRecords = {}
     with open(args.file, 'rb') as f:
         chunk = f.read(MFT_RECORD_SIZE)
-        while i < 50:
+        while i < j:
             try:
                 mftRecords[i] = chunk
                 chunk = f.read(MFT_RECORD_SIZE)
@@ -649,8 +650,8 @@ if __name__ == '__main__':
                 break
 
     MFT_parsed = parse_all(mftRecords)
-    MFT_parsed_ = parse_tree(MFT_parsed)
-    logging.info(f'The parsing has finished successfully \n{len(MFT_parsed_)}/{length_MFT // 1024} used entries in the MFT')
+    MFT_parsed = parse_tree(MFT_parsed)
+    logging.info(f'The parsing has finished successfully \n{len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
 
     if args.json:
         MFT_to_json(MFT_parsed_, args.json)

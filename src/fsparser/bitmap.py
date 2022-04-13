@@ -5,7 +5,7 @@ import csv
 import logging
 import itertools
 from argparse import ArgumentParser
-from ressources.ProgressBar import printProgressBar
+from fsparser.ressources.ProgressBar import printProgressBar
 
 bitmap_logger = logging.getLogger('bitmap')
 

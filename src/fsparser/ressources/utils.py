@@ -4,6 +4,7 @@
 
 import csv
 import json
+from pathlib import Path, WindowsPath
 from datetime import datetime, timedelta
 
 
@@ -12,7 +13,6 @@ def convert_filetime(date_to_convert: int):
     win_date = datetime(1601, 1, 1, 0, 0, 0)
     timestamp = win_date + delta
 
-    # TODO: gérer la timezone ? donné en UTC
     return f'{datetime.strftime(timestamp, "%d.%m.%Y %H:%M:%S +0000")}'
 
 
@@ -23,7 +23,8 @@ def MFT_to_json(dict, file):
 
 def MFT_to_csv(MFT, file):
     fieldnames = ['ID', 'FILE/BAAD', 'LSN', 'Hard link count', 'Allocation flag', 'Allocation flag (verbose)',
-                  'Entry number', 'Base record reference', 'SI creation time', 'SI modification time', 'SI entry modification time',
+                  'Entry number', 'Base record reference', 'SI creation time', 'SI modification time',
+                  'SI entry modification time',
                   'SI last accessed time', 'File type', 'USN', 'FN creation time', 'FN modification time',
                   'FN entry modification time', 'FN last accessed time', 'Parent entry number', 'Filename', 'Run list']
 
@@ -71,39 +72,82 @@ def MFT_to_csv(MFT, file):
                                   'Base record reference': value['header']['Base record reference'],
                                   'Entry number': value['header']['Entry number'], **si, **fn, **d}))
 
+
 def is_set(x, dict):
     return [dict[n] for n in range(16) if x & 1 << n != 0]
 
 
 def parse_tree(MFT):
-    root_directory, root = 5, '.'
+    root_directory, root = 5, 'root'
+
+    entries = {}
+    # for k, entry in MFT.items():
+    #     if '$FILE_NAME' in entry:
+    #         entries[k] = entry['$FILE_NAME']['Parent entry number']
+    #     else:
+    #         entries[k] = ''
 
     n = 0
-    p_ids = {}
-    ids = {}
-    p_ids[root_directory] = root
+    result = {}
+    result[root_directory] = Path(root)
+    p_ids = []
+    ids = []
+    p_ids.append(root_directory)
+    # p_ids[root_directory] = root
     length = len(MFT)
+    print(length)
 
+    while 1:
+        for k, entry in MFT.items():
+            current_entry = entry['header']['Entry number']
+            if '$FILE_NAME' in entry:
+                parent_entry = entry['$FILE_NAME']['Parent entry number']
+                current_filename = entry['$FILE_NAME']['Filename']
+                if isinstance(current_filename, list):
+                    current_filename = current_filename[1]
 
-    for k, entry in MFT.items():
-        current_entry = entry['header']['Entry number']
-        if entry['$FILE_NAME']:
-            parent_entry = entry['$FILE_NAME']['Parent entry number']
-            current_filename = entry['$FILE_NAME']['Filename']
-            if isinstance(current_filename, list):
-                current_filename = current_filename[1]
+                if parent_entry in p_ids:
+                    result[current_entry] = Path(result[parent_entry])/current_filename
+                    ids.append(current_entry)
 
-            # if parent_entry == root_directory:
-            #    entry['header']['Path'] = Path(f'{root}/{current_filename}')
-            if current_entry == root_directory:
-                entry['header']['Path'] = root
+                # if parent_entry in p_ids:
+                #     result[current_entry] = result[parent_entry]/current_filename
+                #     ids.append(current_entry)
+            n += 1
+        p_ids = ids
+        if len(result.keys()) == length:
+            break
 
-            if parent_entry in p_ids:
-                entry['header']['Path'] = p_ids[parent_entry] + '\\' + current_filename
-                ids[current_entry] = current_filename
+    return result
+
+def build_folder_tree(paths, MFT):
+    # Création des dossiers
+    for entry in MFT.values():
+        entry['header']['Path'] = paths[entry['header']['Entry number']]
+
+    for path in path.values():
+        folder.mkdir(parents=True, exist_ok=True)
+
+    return None
+    # for k, entry in MFT.items():
+    #     current_entry = entry['header']['Entry number']
+    #     if '$FILE_NAME' in entry:
+    #         parent_entry = entry['$FILE_NAME']['Parent entry number']
+    #         current_filename = entry['$FILE_NAME']['Filename']
+    #         if isinstance(current_filename, list):
+    #             current_filename = current_filename[1]
+    #
+    #         if parent_entry in p_ids and current_entry != root_directory:
+    #             entry['header']['Path'] = p_ids[parent_entry] + '\\' + current_filename
+    #             p_ids[current_entry] = entry['header']['Path']
+
+        #TODO: gérer les cas où l'entrée parent a un # + grand que current entry
+        #TODO: regarder cette entrée 29
+        #TODO: regarder pourquoi il manque des entrées :(
 
     p_ids = ids
     return MFT
+
 
 if __name__ == '__main__':
     pass
