@@ -449,13 +449,17 @@ def parse_index_allocation(index_allocation, raw_record, next_offset):
     record = raw_record[next_offset:]
     index_allocation['Attribute first offset'] = next_offset
     parse_attribute_header(record, index_allocation)
-    print(index_allocation)
     # The data run contains the cluster positions + numbers of the INDX - which is a list of index records describing
     # the names, length, etc. of files and directories contained in one parent directory. Its content is not considered
     # yet, as it is only the B-Tree that is used by NTFS to manage files and directories
     # The content of the following bitmap attribute tells which index record is in use.
-    print(index_allocation['Run list\'s start offset'])
-    index_allocation['Data run'] = run_list(index_allocation['Run list\'s start offset'], record)
+    content_offset = index_allocation['Attribute header size']
+    record = record[content_offset:]
+
+    index_allocation['Initial VCN'] = struct.unpack('<Q', record[0:8])[0]
+    index_allocation['Final VCN'] = struct.unpack('<Q', record[8:16])[0]
+    index_allocation['Offset to data run'] = struct.unpack('<H', record[16:18])[0]
+    index_allocation['Data run'] = run_list(index_allocation['Offset to data run'] - 16, record)
 
     return index_allocation
 
