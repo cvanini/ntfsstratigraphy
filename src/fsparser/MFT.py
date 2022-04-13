@@ -8,6 +8,10 @@ Will be managed afterwards.
 
 Sources : File system forensic analysis (B. Carrier, 2005) and https://flatcap.github.io/linux-ntfs/ntfs/attributes/index.html
 '''
+import sys
+import os
+
+sys.path.append(os.getcwd() + '\\src')
 
 import copy
 import struct
@@ -78,7 +82,7 @@ def parse_attribute_header(record, dict):
     # includes the header ~of the header
     dict['Attribute size'] = struct.unpack("<I", record[4:8])[0]
     dict['Resident'] = struct.unpack("<B", record[8:9])[0]
-    # This part gives the number of caracter of the name. As encoded in utf-16, multiplied by 2 to consider 2 bytes.
+    # This part gives the number of character of the name. As encoded in utf-16, multiplied by 2 to consider 2 bytes.
     dict['Attribute name length'] = struct.unpack("<B", record[9:10])[0]*2
     dict['Offset to name'] = struct.unpack("<H", record[10:12])[0]
     # File type
@@ -89,25 +93,40 @@ def parse_attribute_header(record, dict):
         case 1: dict['Flags (verbose)'] = 'Compressed'
         case 16384: dict['Flags (verbose)'] = 'Encrypted'
         case 32768: dict['Flags (verbose)'] = 'Sparse'
-        case _ : dict['Flags (verbose)'] = 'Unknown'
+        case _: dict['Flags (verbose)'] = 'Unknown'
 
     dict['Attribute ID'] = struct.unpack("<H", record[14:16])[0]
+    match dict['Resident']:
+        case 0:
+            dict['Resident (verbose)'] = '00 (Resident content)'
+            dict['Attribute content size'] = struct.unpack("<I", record[16:20])[0]
+            offset = struct.unpack("<H", record[20:22])[0]
+            match dict['Attribute name length']:
+                case 0:
+                    dict['Attribute content start'] = offset
+                    dict['Attribute header size'] = 24
+                case _:
+                    dict['Attribute content start'] = offset
+                    dict['Attribute header size'] = 24 + dict['Attribute name length']
+        case 1:
+            dict['Resident (verbose)'] = '01 (Non resident content)'
+            dict['Initial VCN'] = struct.unpack("<Q", record[16:24])[0]
+            dict['Last VCN'] = struct.unpack("<Q", record[24:32])[0]
+            match dict['Attribute name length']:
+                case 0:
+                    dict['Attribute header size'] = 16
+                    dict['Run list\'s start offset'] = struct.unpack("<H", record[32:34])[0]
+                case _:
+                    dict['Attribute header size'] = 16 + dict['Attribute name length']
+                    dict['Run list\'s start offset'] = struct.unpack("<H", record[32:34])[0] + dict['Attribute name length']
+            dict['File physical size'] = struct.unpack("<Q", record[40:48])[0]
+            dict['File logical size'] = struct.unpack("<Q", record[48:56])[0]
+            dict['File initialized size'] = struct.unpack("<Q", record[56:64])[0]
 
-    # Run List considered only in the $DATA attribute:
-    if dict['Resident'] == 0:
-        dict['Resident (verbose)'] = '00 (Resident content)'
-        # length of attribute without header
-        dict['Content size'] = struct.unpack("<I", record[16:20])[0]
-        dict['Content start offset (resident)'] = struct.unpack("<H", record[20:22])[0]
-        dict['Attribute header size'] = 24
-    elif dict['Resident'] == 1:
-        dict['Resident (verbose)'] = '01 (Non resident content)'
-        dict['Attribute header size'] = 16
-    else:
-        raise Exception("Wrong value for Resident flag - possible values (00, 01)")
+        case _: raise Exception("Wrong value for Resident flag - possible values (00, 01)")
 
     # Useful for directories, that have a name in the header attribute ($I30)
-    if dict['Attribute name length'] != 0 :
+    if dict['Attribute name length'] != 0:
         offset = dict['Offset to name']
         dict['Name'] = record[offset:offset+dict['Attribute name length']].decode('utf-16')
 
@@ -125,6 +144,7 @@ def parse_attribute_header(record, dict):
 
 # The $STANDARD_INFORMATION attribute can have a size that fits between 48 bytes to 72 bytes.
 # The USN is therefore not always attributed to files/directories
+# This attribute is always resident
 def parse_standard(standard, raw_record, next_offset):
     standard.clear()
     standard['Attribute first offset'] = next_offset
@@ -133,10 +153,7 @@ def parse_standard(standard, raw_record, next_offset):
     record = raw_record[next_offset:]
 
     parse_attribute_header(record, standard)
-    if standard['Resident'] == 0:
-        content_offset = standard['Content start offset (resident)']
-    else:
-        content_offset = standard['Content start offset']
+    content_offset = standard['Attribute content start']
     record = record[content_offset:]
 
     standard['Creation time'] = convert_filetime(struct.unpack("<Q", record[:8])[0])
@@ -164,6 +181,9 @@ def parse_standard(standard, raw_record, next_offset):
 
 
 ########################## $ATTRIBUTE_LIST ATTRIBUTE ###################################################################
+
+# This attribute appears when there are too much attributes to store for an MFT entry. Attributes are listed
+# and stored in this attribute.
 def parse_attribute_list(attribute_list, raw_record, next_offset):
     attribute_list.clear()
 
@@ -173,6 +193,10 @@ def parse_attribute_list(attribute_list, raw_record, next_offset):
     record = raw_record[next_offset:]
     attribute_list['Attribute first offset'] = next_offset
     parse_attribute_header(record, attribute_list)
+
+    # content_offset = attribute_list['Attribute content start']
+    # record = record[content_offset:]
+
     return attribute_list
 
 
@@ -187,10 +211,7 @@ def parse_filename(filename, raw_record, next_offset):
 
     parse_attribute_header(record, filename)
 
-    if filename['Resident'] == 0:
-        content_offset = filename['Content start offset (resident)']
-    else:
-        content_offset = filename['Content start offset']
+    content_offset = filename['Attribute content start']
 
     record = record[content_offset:]
     filename['Parent entry number'] = struct.unpack("<HHH", record[:6])[0]
@@ -222,6 +243,7 @@ def parse_objectid(object_id, raw_record, next_offset):
 
 ########################## $SECURITY_DESCRIPTOR ATTRIBUTE ##############################################################
 
+# Way too complicate :)
 def parse_security_descriptor(security_descriptor, raw_record, next_offset):
     security_descriptor.clear()
 
@@ -268,6 +290,8 @@ def parse_volume_information(volume_information, raw_record, next_offset):
 def run_list(first_off, record):
 
     run_list = []
+    # left nibble = number of bytes that contains the position of the cluster in the pointer
+    # right nibble = number of bytes that contains the number of cluster in the pointer
     while True:
         pointer_length = struct.unpack("<B", record[first_off:first_off + 1])[0]
         left, right = pointer_length >> 4, pointer_length & 0x0F
@@ -281,7 +305,7 @@ def run_list(first_off, record):
 
         if record[first_off:first_off + 1] == b'\x00':
             break
-
+    print(run_list)
     return run_list
 
 
@@ -297,27 +321,12 @@ def parse_data(data, raw_record, offset, k):
     data['Attribute first offset'] = offset
     parse_attribute_header(record, data)
 
-    content_offset = data['Attribute header size']
-    record = record[content_offset:]
+    # Note: doesn't extract the content of resident files
     if data['Resident'] == 1:
-        data['Run list\'s virtual first cluster number'] = struct.unpack("<Q", record[0:8])[0]
-        data['Run list\'s virtual last cluster number'] = struct.unpack("<Q", record[8:16])[0]
-        data['Run list\'s start offset'] = struct.unpack("<H", record[16:18])[0]
-        data['File physical size'] = struct.unpack("<Q", record[24:32])[0]
-        data['File logical size'] = struct.unpack("<Q", record[32:40])[0]
-        data['File initialized size'] = struct.unpack("<Q", record[40:48])[0]
-
-        # left nibble = number of bytes that contains the position of the cluster in the pointer
-        # right nibble = number of bytes that contains the number of cluster in the pointer
-        first_off = data['Run list\'s start offset'] - 16
-
+        first_off = data['Run list\'s start offset']
         # run list made of tuples : (position of clusters, number of clusters)
         data['Run list'] = run_list(first_off, record)
 
-    elif data['Resident'] == 0:
-        pass
-    else:
-        raise Exception("Wrong value for 'resident' - possible values (0,1)")
 
     return data
 
@@ -350,30 +359,42 @@ def parse_index_entry(index_entry, index, record):
         case 0:
             while length_stream > 0:
                 try:
-                    index_entry.clear()
-                    index_entry['MFT file reference'] = struct.unpack('<Q', record[0:8])[0]
+                    #TODO: attention HHH ou Q ?
+                    index_entry['MFT file reference'] = struct.unpack('<HHH', record[0:6])[0]
                     index_entry['Length of entry'] = struct.unpack('<H', record[8:10])[0]
                     index_entry['Length of stream'] = struct.unpack('<H', record[10:12])[0]
                     index_entry['Index entry flag'] = struct.unpack('<I', record[12:16])[0]
 
-                    # match index_entry['Index entry flag']:
-                    #     case 1:
-                    #         index_entry['Index entry flag (verbose)'] = 'Child nodes exist'
-                    #         record = record[:index_entry['Length of entry']]
-                    #         index_entry['VCN'] = record[:-8]
-                    #     case 2:
-                    #         index_entry['Index entry flag (verbose)'] = 'Last entry in list'
-                    #     case 3:
-                    #         index_entry['Index entry flag (verbose)'] = ['Child nodes exists', 'Last entry in list']
-                    #     case _:
-                    #         print(index_entry['Index entry flag'])
-                    stream = record[16:]
-                    filename_length = struct.unpack("<B", stream[64:65])[0] * 2
-                    filename = stream[66:66 + filename_length].decode('utf-16')
-                    if filename :
-                        index['Filenames in directory'].append(filename)
+                    # Some entries may have only a header or a header + VCN (= no stream)
+                    if index_entry['Length of stream'] != 0:
+                        stream = record[16:]
+                        filename_length = struct.unpack("<B", stream[64:65])[0] * 2
+                        filename = stream[66:66 + filename_length].decode('utf-16')
+                        if filename:
+                            # TODO: gérer le cas où il y a 2 filenames
+                            # The attribute contains a list of some of the childs that are present in the directory
+                            # Each entry has a VCN and filename, telling NTFS that "at this VCN, I have all files starting
+                            # after this letter, until next VCN"
+                            index['Filenames in directory'].append(filename)
                     record = record[index_entry['Length of entry']:]
                     length_stream = length_stream-index_entry['Length of entry']
+
+                    match index_entry['Index entry flag']:
+                        case 1:
+                            # VCN of child nodes (directories) in $INDEX_ALLOCATION attribute
+                            index_entry['Index entry flag (verbose)'] = 'Child nodes exist'
+                            entry = record[:index_entry['Length of entry']]
+                            index_entry['VCN of child nodes'] = entry[:-8]
+                        case 2:
+                            index_entry['Index entry flag (verbose)'] = 'Last entry in list'
+                            break
+                        case 3:
+                            # TODO: gérer les child nodes ?
+                            index_entry['Index entry flag (verbose)'] = ['Child nodes exists', 'Last entry in list']
+                            break
+                        case _:
+                            pass # index_entry['Index entry flag'])
+
                 except Exception:
                     break
 
@@ -395,7 +416,7 @@ def parse_index_root(index_root, raw_record, next_offset):
     parse_attribute_header(record, index_root)
 
     # Parsing the index root header
-    start = index_root['Content start offset (resident)']
+    start = index_root['Attribute content start']
     record = record[start:]
     index_root['Attribute type ID'] = struct.unpack('<I', record[0:4])[0]
     index_root['Type'] = attributes_ID[index_root['Attribute type ID']]
@@ -411,7 +432,6 @@ def parse_index_root(index_root, raw_record, next_offset):
             case 0: index_root.update(parse_index_entry(index_entry, index_root, record[32:]))
             case 1: pass
             case _: raise ValueError('Invalid flag value (0 or 1)')
-
     return index_root
 
 
@@ -419,6 +439,7 @@ def parse_index_root(index_root, raw_record, next_offset):
 
 # This attribute is used when index entries cannot fit in the $INDEX_ROOT (Index flag = 1)
 # One index entry = one node in the sorted tree
+# This attribute is always non-resident, made of data runs then
 def parse_index_allocation(index_allocation, raw_record, next_offset):
     index_allocation.clear()
 
@@ -428,20 +449,20 @@ def parse_index_allocation(index_allocation, raw_record, next_offset):
     record = raw_record[next_offset:]
     index_allocation['Attribute first offset'] = next_offset
     parse_attribute_header(record, index_allocation)
-
-    content_offset = index_allocation['Attribute header size']
-    record = record[content_offset:]
-
-    index_allocation['Initial VCN'] = struct.unpack('<Q', record[0:8])[0]
-    index_allocation['Final VCN'] = struct.unpack('<Q', record[8:16])[0]
-    index_allocation['Offset to data run'] = struct.unpack('<H', record[16:18])[0]
-    index_allocation['Data run'] = run_list(index_allocation['Offset to data run']-16, record)
+    print(index_allocation)
+    # The data run contains the cluster positions + numbers of the INDX - which is a list of index records describing
+    # the names, length, etc. of files and directories contained in one parent directory. Its content is not considered
+    # yet, as it is only the B-Tree that is used by NTFS to manage files and directories
+    # The content of the following bitmap attribute tells which index record is in use.
+    print(index_allocation['Run list\'s start offset'])
+    index_allocation['Data run'] = run_list(index_allocation['Run list\'s start offset'], record)
 
     return index_allocation
 
 
 ########################## $BITMAP ATTRIBUTE ###########################################################################
 
+# Not considered
 def parse_bitmap(bitmap, raw_record, next_offset):
     bitmap.clear()
 
@@ -455,7 +476,8 @@ def parse_bitmap(bitmap, raw_record, next_offset):
 
 
 ########################## $LOGGED_UTILITY_STREAM ATTRIBUTE ############################################################
-# TODO: apparemment utilisé quand un fichier est chiffré, stocke la clé concernée
+
+# Not considered
 def parse_logged_utility_stream(logged_utility_stream, raw_record, next_offset):
     logged_utility_stream.clear()
 
@@ -472,7 +494,9 @@ def parse_logged_utility_stream(logged_utility_stream, raw_record, next_offset):
 
 MFT = {}
 
-
+# Main function which parses the attributes one by one, if exists. As they are always written by order of attribute ID,
+# the function only checks after the end of every structure, which is the attribute to parse next, or stops if it is
+# the end of the entry.
 def parse_all(records_dict):
     n = 1
 
@@ -501,7 +525,7 @@ def parse_all(records_dict):
                     next_offset = MFT_record['$FILE_NAME']['Attribute first offset'] + MFT_record['$FILE_NAME'][
                         'Attribute size']
 
-                    # A file can have the two types of filename format (DOS and ?)
+                    # A file can have the two types of filename format (DOS and Win32)
                     if v[next_offset:next_offset + 4] == b'\x30\x00\x00\x00':
                         filenames = []
                         filenames.append(filename['Filename'])
@@ -533,7 +557,7 @@ def parse_all(records_dict):
                 next_offset = MFT_record['$VOLUME_INFORMATION']['Attribute first offset'] + \
                               MFT_record['$VOLUME_INFORMATION']['Attribute size']
 
-            datas =[]
+            datas = []
             while True:
                 if v[next_offset:next_offset + 4] == b'\x80\x00\x00\x00':
                     MFT_record['$DATA'] = parse_data(data, v, next_offset, k)
@@ -583,7 +607,6 @@ def parse_all(records_dict):
             if v[next_offset:next_offset + 4] == b'\xFF\xFF\xFF\xFF':
                 MFT[k] = copy.deepcopy(MFT_record)
 
-
             MFT_record.clear()
 
     return MFT
@@ -609,7 +632,7 @@ def main(path, k):
                 break
 
     MFT_parsed = parse_all(mftRecords)
-    MFT_parsed_ = parse_tree(MFT_parsed)
+    # MFT_parsed_ = parse_tree(MFT_parsed)
     MFT_logger.info(f'The parsing has finished successfully. {len(MFT_parsed_)}/{length_MFT // 1024} used entries in the MFT')
 
     MFT_logger.info(f'Writting to a CSV file.. this operation may take some time')
@@ -654,9 +677,9 @@ if __name__ == '__main__':
     logging.info(f'The parsing has finished successfully \n{len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
 
     if args.json:
-        MFT_to_json(MFT_parsed_, args.json)
+        MFT_to_json(MFT_parsed, args.json)
 
     if args.csv:
         logging.info(f'Writting to a CSV file.. this operation may take some time')
-        MFT_to_csv(MFT_parsed_, args.csv)
+        MFT_to_csv(MFT_parsed, args.csv)
         logging.info(f'CSV file of the $MFT is written !')
