@@ -59,13 +59,20 @@ def parse_header(header, raw_record):
     # Status of the file
     header['Allocation flag'] = struct.unpack("<H", raw_record[22:24])[0]
     match header['Allocation flag']:
-        case 0: header['Allocation flag (verbose)'] = '00 (Deleted file)'
-        case 1: header['Allocation flag (verbose)'] = '01 (Visible file)'
-        case 2: header['Allocation flag (verbose)'] = '02 (Deleted directory)'
-        case 3: header['Allocation flag (verbose)'] = '03 (Visible directory)'
-        case 4: header['Allocation flag (verbose)'] = '04 (Extension)'
-        case 8: header['Allocation flag (verbose)'] = '08 (Special index)'
-        case _: header['Allocation flag (verbose)'] = 'Unknown allocation flag'
+        case 0:
+            header['Allocation flag (verbose)'] = '00 (Deleted file)'
+        case 1:
+            header['Allocation flag (verbose)'] = '01 (Visible file)'
+        case 2:
+            header['Allocation flag (verbose)'] = '02 (Deleted directory)'
+        case 3:
+            header['Allocation flag (verbose)'] = '03 (Visible directory)'
+        case 4:
+            header['Allocation flag (verbose)'] = '04 (Extension)'
+        case 8:
+            header['Allocation flag (verbose)'] = '08 (Special index)'
+        case _:
+            header['Allocation flag (verbose)'] = 'Unknown allocation flag'
 
     header['Entry logical size'] = struct.unpack("<I", raw_record[24:28])[0]
     header['Entry physical size'] = struct.unpack("<I", raw_record[28:32])[0]
@@ -83,17 +90,22 @@ def parse_attribute_header(record, dict):
     dict['Attribute size'] = struct.unpack("<I", record[4:8])[0]
     dict['Resident'] = struct.unpack("<B", record[8:9])[0]
     # This part gives the number of character of the name. As encoded in utf-16, multiplied by 2 to consider 2 bytes.
-    dict['Attribute name length'] = struct.unpack("<B", record[9:10])[0]*2
+    dict['Attribute name length'] = struct.unpack("<B", record[9:10])[0] * 2
     dict['Offset to name'] = struct.unpack("<H", record[10:12])[0]
     # File type
     dict['Flags'] = struct.unpack("<H", record[12:14])[0]
 
     match dict['Flags']:
-        case 0: dict['Flags (verbose)'] = 'None'
-        case 1: dict['Flags (verbose)'] = 'Compressed'
-        case 16384: dict['Flags (verbose)'] = 'Encrypted'
-        case 32768: dict['Flags (verbose)'] = 'Sparse'
-        case _: dict['Flags (verbose)'] = 'Unknown'
+        case 0:
+            dict['Flags (verbose)'] = 'None'
+        case 1:
+            dict['Flags (verbose)'] = 'Compressed'
+        case 16384:
+            dict['Flags (verbose)'] = 'Encrypted'
+        case 32768:
+            dict['Flags (verbose)'] = 'Sparse'
+        case _:
+            dict['Flags (verbose)'] = 'Unknown'
 
     dict['Attribute ID'] = struct.unpack("<H", record[14:16])[0]
     match dict['Resident']:
@@ -112,33 +124,42 @@ def parse_attribute_header(record, dict):
             dict['Resident (verbose)'] = '01 (Non resident content)'
             dict['Initial VCN'] = struct.unpack("<Q", record[16:24])[0]
             dict['Last VCN'] = struct.unpack("<Q", record[24:32])[0]
+            dict['Run list\'s start offset'] = struct.unpack("<H", record[32:34])[0]
+
             match dict['Attribute name length']:
                 case 0:
                     dict['Attribute header size'] = 16
-                    dict['Run list\'s start offset'] = struct.unpack("<H", record[32:34])[0]
                 case _:
                     dict['Attribute header size'] = 16 + dict['Attribute name length']
-                    dict['Run list\'s start offset'] = struct.unpack("<H", record[32:34])[0] + dict['Attribute name length']
             dict['File physical size'] = struct.unpack("<Q", record[40:48])[0]
             dict['File logical size'] = struct.unpack("<Q", record[48:56])[0]
             dict['File initialized size'] = struct.unpack("<Q", record[56:64])[0]
 
-        case _: raise Exception("Wrong value for Resident flag - possible values (00, 01)")
+        case _:
+            raise Exception("Wrong value for Resident flag - possible values (00, 01)")
 
     # Useful for directories, that have a name in the header attribute ($I30)
     if dict['Attribute name length'] != 0:
         offset = dict['Offset to name']
-        dict['Name'] = record[offset:offset+dict['Attribute name length']].decode('utf-16')
+        dict['Name'] = record[offset:offset + dict['Attribute name length']].decode('utf-16')
 
         match dict['Name']:
             # Index of filenames
-            case '$I30': dict['Index type'] = 'Directory'
-            case '$SDH': dict['Index type'] = 'Security descriptors index'
-            case '$SII': dict['Index type'] = 'Security Ids index'
-            case '$O': dict['Index type'] = 'Object Ids or Owner Ids indexes'
-            case '$Q': dict['Index type'] = 'Quotas index'
-            case '$R': dict['Index type'] = 'Reparse Points index'
-            case _: pass
+            case '$I30':
+                dict['Index type'] = 'Directory'
+            case '$SDH':
+                dict['Index type'] = 'Security descriptors index'
+            case '$SII':
+                dict['Index type'] = 'Security Ids index'
+            case '$O':
+                dict['Index type'] = 'Object Ids or Owner Ids indexes'
+            case '$Q':
+                dict['Index type'] = 'Quotas index'
+            case '$R':
+                dict['Index type'] = 'Reparse Points index'
+            case _:
+                pass
+
 
 ########################## $STANDARD_INFORMATION ATTRIBUTE #############################################################
 
@@ -288,7 +309,6 @@ def parse_volume_information(volume_information, raw_record, next_offset):
 ########################## $DATA ATTRIBUTE #############################################################################
 
 def run_list(first_off, record):
-
     run_list = []
     # left nibble = number of bytes that contains the position of the cluster in the pointer
     # right nibble = number of bytes that contains the number of cluster in the pointer
@@ -305,7 +325,7 @@ def run_list(first_off, record):
 
         if record[first_off:first_off + 1] == b'\x00':
             break
-    print(run_list)
+
     return run_list
 
 
@@ -327,8 +347,8 @@ def parse_data(data, raw_record, offset, k):
         # run list made of tuples : (position of clusters, number of clusters)
         data['Run list'] = run_list(first_off, record)
 
-
     return data
+
 
 ########################## $INDEX NODE HEADER ##########################################################################
 
@@ -341,11 +361,15 @@ def parse_index_node_header(index_node, record):
     index_node['Index flag'] = struct.unpack('<B', record[12:13])[0]
 
     match index_node['Index flag']:
-        case 0: index_node['Index flag (verbose)'] = 'Small index (fits in $INDEX_ROOT)'
-        case 1: index_node['Index flag (verbose)'] = 'Large index (external allocation needed)'
-        case _: raise ValueError("Wrong flag value (only 0 or 1)")
+        case 0:
+            index_node['Index flag (verbose)'] = 'Small index (fits in $INDEX_ROOT)'
+        case 1:
+            index_node['Index flag (verbose)'] = 'Large index (external allocation needed)'
+        case _:
+            raise ValueError("Wrong flag value (only 0 or 1)")
 
     return index_node
+
 
 ########################## $INDEX ENTRY ################################################################################
 
@@ -359,7 +383,7 @@ def parse_index_entry(index_entry, index, record):
         case 0:
             while length_stream > 0:
                 try:
-                    #TODO: attention HHH ou Q ?
+                    # TODO: attention HHH ou Q ?
                     index_entry['MFT file reference'] = struct.unpack('<HHH', record[0:6])[0]
                     index_entry['Length of entry'] = struct.unpack('<H', record[8:10])[0]
                     index_entry['Length of stream'] = struct.unpack('<H', record[10:12])[0]
@@ -377,7 +401,7 @@ def parse_index_entry(index_entry, index, record):
                             # after this letter, until next VCN"
                             index['Filenames in directory'].append(filename)
                     record = record[index_entry['Length of entry']:]
-                    length_stream = length_stream-index_entry['Length of entry']
+                    length_stream = length_stream - index_entry['Length of entry']
 
                     match index_entry['Index entry flag']:
                         case 1:
@@ -393,14 +417,17 @@ def parse_index_entry(index_entry, index, record):
                             index_entry['Index entry flag (verbose)'] = ['Child nodes exists', 'Last entry in list']
                             break
                         case _:
-                            pass # index_entry['Index entry flag'])
+                            pass  # index_entry['Index entry flag'])
 
                 except Exception:
                     break
 
-        case 1: pass
+        case 1:
+            pass
 
     return index
+
+
 ########################## $INDEX_ROOT ATTRIBUTE #######################################################################
 
 # This attribute is always resident, always the root of the index tree and store a small list of index entries
@@ -429,9 +456,12 @@ def parse_index_root(index_root, raw_record, next_offset):
     # Parses only directory indexes for now
     if index_root['Type'] == '$FILE_NAME':
         match index_root['Index flag']:
-            case 0: index_root.update(parse_index_entry(index_entry, index_root, record[32:]))
-            case 1: pass
-            case _: raise ValueError('Invalid flag value (0 or 1)')
+            case 0:
+                index_root.update(parse_index_entry(index_entry, index_root, record[32:]))
+            case 1:
+                pass
+            case _:
+                raise ValueError('Invalid flag value (0 or 1)')
     return index_root
 
 
@@ -453,13 +483,10 @@ def parse_index_allocation(index_allocation, raw_record, next_offset):
     # the names, length, etc. of files and directories contained in one parent directory. Its content is not considered
     # yet, as it is only the B-Tree that is used by NTFS to manage files and directories
     # The content of the following bitmap attribute tells which index record is in use.
-    content_offset = index_allocation['Attribute header size']
-    record = record[content_offset:]
+    #content_offset = index_allocation['Attribute header size']
+    #record = record[content_offset:]
 
-    index_allocation['Initial VCN'] = struct.unpack('<Q', record[0:8])[0]
-    index_allocation['Final VCN'] = struct.unpack('<Q', record[8:16])[0]
-    index_allocation['Offset to data run'] = struct.unpack('<H', record[16:18])[0]
-    index_allocation['Data run'] = run_list(index_allocation['Offset to data run'] - 16, record)
+    index_allocation['Data run'] = run_list(index_allocation['Run list\'s start offset'], record)
 
     return index_allocation
 
@@ -497,6 +524,7 @@ def parse_logged_utility_stream(logged_utility_stream, raw_record, next_offset):
 ########################################################################################################################
 
 MFT = {}
+
 
 # Main function which parses the attributes one by one, if exists. As they are always written by order of attribute ID,
 # the function only checks after the end of every structure, which is the attribute to parse next, or stops if it is
@@ -561,23 +589,18 @@ def parse_all(records_dict):
                 next_offset = MFT_record['$VOLUME_INFORMATION']['Attribute first offset'] + \
                               MFT_record['$VOLUME_INFORMATION']['Attribute size']
 
-            datas = []
+            if v[next_offset:next_offset + 4] == b'\x80\x00\x00\x00':
+                MFT_record['$DATA'] = parse_data(data, v, next_offset, k)
+                next_offset = MFT_record['$DATA']['Attribute first offset'] + \
+                              MFT_record['$DATA']['Attribute size']
+            i = 1
             while True:
+                l = {}
                 if v[next_offset:next_offset + 4] == b'\x80\x00\x00\x00':
-                    MFT_record['$DATA'] = parse_data(data, v, next_offset, k)
-                    next_offset = MFT_record['$DATA']['Attribute first offset'] + \
-                                  MFT_record['$DATA']['Attribute size']
-
-                    if v[next_offset:next_offset + 4] == b'\x80\x00\x00\x00':
-                        if data['Resident'] == 1:
-                            datas.append(data['Run list'])
-                        MFT_record['$DATA'] = parse_data(data, v, next_offset, k)
-                        next_offset = MFT_record['$DATA']['Attribute first offset'] + MFT_record['$DATA'][
-                            'Attribute size']
-
-                        if data['Resident'] == 1 and len(datas) != 0:
-                            datas.append(data['Run list'])
-                            MFT_record['$DATA']['Run list'] = datas
+                    MFT_record[f'ADS{str(i)}'] = parse_data(l, v, next_offset, k)
+                    next_offset = MFT_record[f'ADS{str(i)}']['Attribute first offset'] + MFT_record[f'ADS{str(i)}'][
+                        'Attribute size']
+                    i += 1
                 else:
                     break
 
@@ -615,6 +638,7 @@ def parse_all(records_dict):
 
     return MFT
 
+
 def main(path, k):
     with open(f"{path}\\{str(k)}\\$MFT", 'rb') as f:
         length_MFT = len(f.read())
@@ -637,11 +661,13 @@ def main(path, k):
 
     MFT_parsed = parse_all(mftRecords)
     # MFT_parsed_ = parse_tree(MFT_parsed)
-    MFT_logger.info(f'The parsing has finished successfully. {len(MFT_parsed_)}/{length_MFT // 1024} used entries in the MFT')
+    MFT_logger.info(
+        f'The parsing has finished successfully. {len(MFT_parsed_)}/{length_MFT // 1024} used entries in the MFT')
 
     MFT_logger.info(f'Writting to a CSV file.. this operation may take some time')
     MFT_to_csv(MFT_parsed_, f"{path}\\MFT_{str(k)}.csv")
     MFT_logger.info(f'CSV file of the $MFT is written !')
+
 
 def log(path, k):
     MFT_logger.info(f'Starting the parsing of the $MFT..')
@@ -677,8 +703,9 @@ if __name__ == '__main__':
                 break
 
     MFT_parsed = parse_all(mftRecords)
-    MFT_parsed = parse_tree(MFT_parsed)
-    logging.info(f'The parsing has finished successfully \n{len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
+    MFT_parsed = parse_tree2(MFT_parsed)
+    logging.info(
+        f'The parsing has finished successfully \n{len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
 
     if args.json:
         MFT_to_json(MFT_parsed, args.json)
