@@ -4,9 +4,10 @@
 import copy
 import csv
 import json
+import struct
 from pathlib import Path, WindowsPath
 from datetime import datetime, timedelta
-from fsparser.ressources.ProgressBar import printProgressBar
+from ressources.ProgressBar import printProgressBar
 
 
 def convert_filetime(date_to_convert: int):
@@ -64,9 +65,9 @@ def MFT_to_csv(MFT, file):
             else:
                 d = {'Run list': ''}
 
-            if '$ADS1' in value:
-                if 'Run list' in value['$ADS1']:
-                    ads = {'ADS Run list': value['$ADS1']['Run list']}
+            if 'ADS1' in value:
+                if 'Run list' in value['ADS1']:
+                    ads = {'ADS Run list': value['ADS1']['Run list']}
                 else:
                     ads = {'ADS Run list': ''}
             else:
@@ -74,11 +75,13 @@ def MFT_to_csv(MFT, file):
 
             if '$INDEX_ROOT' in value:
                 ind = {'Index flag': value['$INDEX_ROOT']['Index flag']}
+            else:
+                ind = {'Index flag': ''}
 
 
             if '$INDEX_ALLOCATION' in value:
-                if 'Run list' in value['$INDEX_ALLOCATION']:
-                    all = {'Index Run list': value['$INDEX_ALLOCATION']['Run list']}
+                if 'Data run' in value['$INDEX_ALLOCATION']:
+                    all = {'Index Run list': value['$INDEX_ALLOCATION']['Data run']}
                 else:
                     all = {'Index Run list': ''}
             else:
@@ -98,107 +101,80 @@ def MFT_to_csv(MFT, file):
 def is_set(x, dict):
     return [dict[n] for n in range(16) if x & 1 << n != 0]
 
-def search(liste, n, element):
+def unpack6(x):
+    x1, x2, x3 = struct.unpack('<HHH', x)
+    return (x1 + (x2 << 16) + (x3 << 32))
+
+def search_parent(sorted_list, length, element):
     i = 0
     start = 0
-    end = n-1
+    end = length-1
 
-    while i < n:
-        middle = (start+end)//2
-        if liste[middle] == element:
+    while i < length:
+        middle = (start + end)//2
+        if sorted_list[middle] == element:
             return True
-        elif liste[middle] < element:
+        elif sorted_list[middle] < element:
             start = middle+1
         else:
             end = middle-1
         i += 1
     return False
 
-def parse_tree2(MFT):
-    temp = copy.deepcopy(MFT)
-
-    temp2 = {k: v for k, v in temp.items() if '$FILE_NAME' in v.keys()}
-    temp3 = {k: v for k, v in sorted(temp2.items(), key=lambda x: x[1]['$FILE_NAME']['Parent entry number'])}
-
-    root_directory, root = 5, 'root'
-    n = 0
-    result = {}
-    result[root_directory] = Path(root)
-    p_ids = []
-    p_ids.append(root_directory)
-    length = len(MFT)
-
-    while 1:
-        ids = []
-        for k, entry in temp3.items():
-            printProgressBar(len(result)+1, len(temp3), stage='reconstructing paths [$MFT]')
-
-            current_entry = entry['header']['Entry number']
-            parent_entry = entry['$FILE_NAME']['Parent entry number']
-            current_filename = entry['$FILE_NAME']['Filename']
-
-            if isinstance(current_filename, list):
-                current_filename = current_filename[1]
-
-            if parent_entry in p_ids:
-                result[current_entry] = Path(result[parent_entry]) / current_filename
-                MFT[k]['header']['Path'] = str(Path(result[parent_entry]) / current_filename)
-                ids.append(current_entry)
-
-        p_ids = ids
-        if len(result) == len(temp3):
-            break
-
-    return MFT
-
 # Build the path of each entries file/dir recursively
 # Can be then used to sort based on Path (ex. keep only C:\Users\)
 def parse_tree(MFT):
+
+    temp_MFT = copy.deepcopy(MFT)
+    # temp2 = {k: v for k, v in temp.items() if '$FILE_NAME' in v.keys()}
+    # temp_MFT = {k: v for k, v in sorted(temp2.items(), key=lambda x: x[1]['$FILE_NAME']['Parent entry number'])}
+    #
+
     root_directory, root = 5, 'root'
-    n = 0
     result = {}
     result[root_directory] = Path(root)
-    p_ids, ids = [], []
-    p_ids.append(root_directory)
-    lonely_childs = list(range(0,len(MFT)+1))
+    p_ids = [root_directory]
+    b = len(p_ids)
     length = len(MFT)
-
     n = 0
+    while 1:
+        for k, entry in temp_MFT.items():
+            printProgressBar(len(result)+1, length, stage='reconstructing paths [$MFT]')
+            current_entry = entry['header']['Entry number']
+            if '$FILE_NAME' in entry:
+                parent_entry = entry['$FILE_NAME']['Parent entry number']
+                current_filename = entry['$FILE_NAME']['Filename']
 
-    for k, entry in MFT.items():
-        printProgressBar(len(result), length, stage='reconstructing paths [$MFT]')
-        current_entry = entry['header']['Entry number']
-        match n:
-            case 0:
-                if '$FILE_NAME' in entry:
-                    parent_entry = entry['$FILE_NAME']['Parent entry number']
-                    current_filename = entry['$FILE_NAME']['Filename']
+                # TODO: gérer le cas des hard links
+                '''if isinstance(current_filename, list):
+                    current_filename = current_filename[1]'''
 
-                    if isinstance(current_filename, list):
-                        current_filename = current_filename[1]
-
-                    if parent_entry in p_ids:
-                        result[current_entry] = Path(result[parent_entry]) / current_filename
-                        entry['header']['Path'] = str(Path(result[parent_entry])/current_filename)
-                        ids.append(current_entry)
-                        lonely_childs.remove(current_entry)
-
+                # search_parent(p_ids)
+                if parent_entry in p_ids:
+                    result[current_entry] = Path(result[parent_entry]) / current_filename
+                    MFT[current_entry]['header']['Path'] = str(Path(result[parent_entry]) / current_filename)
+                    p_ids.append(current_entry)
+                    #p_ids.sort()
                 else:
-                    result[current_entry] = ''
+                    # print(f'passing entry {current_entry} : {parent_entry}')
+                    pass
+            else:
+                result[current_entry] = ''
+                MFT[current_entry]['header']['Path'] = ''
+                p_ids.append(current_entry)
+                # p_ids.sort()
 
-    p_ids = ids
-    n = 1
+        # creating a new instance of the temporary MFT dictionary, without the entries that have their path already
+        # reconstructed and put into result (to avoid redundancy)
+        #p_ids.sort(
 
-    for lonely_child, parent in lonely_childs.items():
-        if parent[0] in p_ids:
-            result[lonely_child] = Path(result[parent[0]]) / parent[1]
-            MFT[lonely_child]['header']['Path'] = str(Path(result[parent[0]]) / parent[1])
-
-    print(len(result))
-    print(len(lonely_childs))
-
+        if len(result.keys()) == length:
+            break
+        else:
+            temp_MFT = {k: v for k, v in temp_MFT.items() if k not in p_ids}
 
     return MFT
+
 
 if __name__ == '__main__':
     pass

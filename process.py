@@ -7,7 +7,7 @@
 
 import os
 import time
-from fsparser import bitmap, boot, MFT
+import bitmap, boot, MFT
 import random
 import shutil
 import logging
@@ -40,6 +40,8 @@ def extract(volume, stage, n):
                    cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
     MFT.log(f"{curr}\\data\\{stage}", n)
 
+def parse(file):
+    pass
 
 def extract_USN_logfile(volume, stage):
     curr = os.getcwd()
@@ -84,8 +86,9 @@ if __name__ == '__main__':
     parser.add_argument('-b', '--backdating', help='change the date of one file, requires to give a date', type=int, required=False)
     parser.add_argument('-d', '--delete', help='pseudo-randomly delete files, requires to give a number', type=str, required=False)
     parser.add_argument('-v', '--volume', help='Volume to process (i.e C:)', type=str, required=True)
-    parser.add_argument('-n', '--stage', help='Stage of the test being processed (i.e 1_creation)', type=str,
-                        required=True)
+    parser.add_argument('-n', '--stage', help='Stage of the test being processed (i.e 1_creation)', type=str, required=True)
+    parser.add_argument('-p', '--path', help='if present, reconstruct the path of the files in the volume', action='store_true', required=False)
+
     # parser.add_argument('-b', '--blank', help='File actions are not executed if specified, for blank test', action='store_true')
     # parser.add_argument('-d', '--directory', help='Directory path containing the sleuthkit libraries (icat.exe)', type=str, required=True)
     # parser.add_argument('-o', '--output', help='Destination directory for the $MFT and $bitmap files', required=True)
