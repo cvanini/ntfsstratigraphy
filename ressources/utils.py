@@ -23,6 +23,7 @@ def MFT_to_json(dict, file):
         json.dump(dict, outfile_json, indent=4)
 
 
+
 def MFT_to_csv(MFT, file):
     fieldnames = ['ID', 'FILE/BAAD', 'LSN', 'Hard link count', 'Allocation flag', 'Allocation flag (verbose)',
                   'Entry number', 'Base record reference', 'Path', 'SI creation time', 'SI modification time',
@@ -105,73 +106,58 @@ def unpack6(x):
     x1, x2, x3 = struct.unpack('<HHH', x)
     return (x1 + (x2 << 16) + (x3 << 32))
 
-def search_parent(sorted_list, length, element):
-    i = 0
-    start = 0
-    end = length-1
-
-    while i < length:
-        middle = (start + end)//2
-        if sorted_list[middle] == element:
-            return True
-        elif sorted_list[middle] < element:
-            start = middle+1
-        else:
-            end = middle-1
-        i += 1
-    return False
-
 # Build the path of each entries file/dir recursively
 # Can be then used to sort based on Path (ex. keep only C:\Users\)
+# TODO : gérer les séquences ?
 def parse_tree(MFT):
 
     temp_MFT = copy.deepcopy(MFT)
-    # temp2 = {k: v for k, v in temp.items() if '$FILE_NAME' in v.keys()}
-    # temp_MFT = {k: v for k, v in sorted(temp2.items(), key=lambda x: x[1]['$FILE_NAME']['Parent entry number'])}
-    #
-
-    root_directory, root = 5, 'root'
-    result = {}
-    result[root_directory] = Path(root)
-    p_ids = [root_directory]
-    b = len(p_ids)
     length = len(MFT)
+
+    # Paths are stored on this dictionary :
+    result = {}
+    result[5] = Path('root')
+    # Parents that already have their path found are appended to this list :
+    p_ids = [5]
+
     n = 0
     while 1:
         for k, entry in temp_MFT.items():
             printProgressBar(len(result)+1, length, stage='reconstructing paths [$MFT]')
-            current_entry = entry['header']['Entry number']
+            # As there can be multiple filenames (cf. hard links):
+            # p = []
             if '$FILE_NAME' in entry:
-                parent_entry = entry['$FILE_NAME']['Parent entry number']
-                current_filename = entry['$FILE_NAME']['Filename']
+                for m in entry:
+                    if m.startswith('$FILE_NAME'):
+                        parent_entry = entry[m]['Parent entry number']
+                        current_filename = entry[m]['Filename']
 
-                # TODO: gérer le cas des hard links
-                '''if isinstance(current_filename, list):
-                    current_filename = current_filename[1]'''
-
-                # search_parent(p_ids)
-                if parent_entry in p_ids:
-                    result[current_entry] = Path(result[parent_entry]) / current_filename
-                    MFT[current_entry]['header']['Path'] = str(Path(result[parent_entry]) / current_filename)
-                    p_ids.append(current_entry)
-                    #p_ids.sort()
-                else:
-                    # print(f'passing entry {current_entry} : {parent_entry}')
-                    pass
+                        if parent_entry in p_ids:
+                            result[k] = Path(result[parent_entry]) / current_filename
+                            # p.append(str(Path(result[parent_entry]) / current_filename))
+                            MFT[k]['header']['Path'] = str(Path(result[parent_entry]) / current_filename)
+                            p_ids.append(k)
+                        else:
+                            # print(f'passing {current_entry}, {current_filename}, {parent_entry}')
+                            pass
+            # some entries do not have a $FILE_NAME
             else:
-                result[current_entry] = ''
-                MFT[current_entry]['header']['Path'] = ''
-                p_ids.append(current_entry)
-                # p_ids.sort()
+                result[k] = ''
+                MFT[k]['header']['Path'] = ''
+                p_ids.append(k)
 
         # creating a new instance of the temporary MFT dictionary, without the entries that have their path already
         # reconstructed and put into result (to avoid redundancy)
-        #p_ids.sort(
-
         if len(result.keys()) == length:
             break
+        # elif n == 10:
+        #     lonely_childs = [(k, v['$FILE_NAME']['Parent entry number'], v['$FILE_NAME']['Filename']) for k, v in temp_MFT.items() if '$FILE_NAME' in v]
+        #     print(lonely_childs)
+        #     break
         else:
             temp_MFT = {k: v for k, v in temp_MFT.items() if k not in p_ids}
+
+        n += 1
 
     return MFT
 

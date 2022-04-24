@@ -40,6 +40,7 @@ def extract(volume, stage, n):
                    cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
     MFT.log(f"{curr}\\data\\{stage}", n)
 
+
 def parse(file):
     pass
 
@@ -83,14 +84,13 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('-s', '--size', help='Size of the file to be created (in bytes), if not specified, creates files of random size',
                         type=int, required=False)
-    parser.add_argument('-b', '--backdating', help='change the date of one file, requires to give a date', type=int, required=False)
-    parser.add_argument('-d', '--delete', help='pseudo-randomly delete files, requires to give a number', type=str, required=False)
     parser.add_argument('-v', '--volume', help='Volume to process (i.e C:)', type=str, required=True)
     parser.add_argument('-n', '--stage', help='Stage of the test being processed (i.e 1_creation)', type=str, required=True)
-    parser.add_argument('-p', '--path', help='if present, reconstruct the path of the files in the volume', action='store_true', required=False)
+    # parser.add_argument('-p', '--path', help='if present, reconstruct the path of the files in the volume', action='store_true', required=False)
+    parser.add_argument('-i', '--image', help='image file to analyze', required=False)
 
-    # parser.add_argument('-b', '--blank', help='File actions are not executed if specified, for blank test', action='store_true')
-    # parser.add_argument('-d', '--directory', help='Directory path containing the sleuthkit libraries (icat.exe)', type=str, required=True)
+    parser.add_argument('-b', '--backdating', help='change the date of one file, requires to give a date', type=int, required=False)
+    parser.add_argument('-d', '--delete', help='pseudo-randomly delete files, requires to give a number', type=str, required=False)
     # parser.add_argument('-o', '--output', help='Destination directory for the $MFT and $bitmap files', required=True)
     args = parser.parse_args()
 

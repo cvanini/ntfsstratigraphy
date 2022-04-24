@@ -16,8 +16,11 @@ sys.path.append(os.getcwd() + '\\src')
 import copy
 import struct
 import logging
+# import pandas as pd
+# import matplotlib as plt
 from ressources.dict import *
 from ressources.utils import *
+from ressources.plot import *
 from ressources.ProgressBar import printProgressBar
 from argparse import ArgumentParser
 
@@ -48,7 +51,7 @@ def parse_header(header, raw_record):
     # Used by the file system log:
     header['$LogFile sequence number (LSN)'] = struct.unpack("<Q", raw_record[8:16])[0]
     # increments when the corresponding file is deleted
-    header['Entry use counter'] = struct.unpack("<H", raw_record[16:18])[0]
+    header['Sequence number'] = struct.unpack("<H", raw_record[16:18])[0]
     # Link count = how many directories referencing this MFT entry
     # If hard links were created for the file, this number is incremented by one for each link.
     header['Hard link count'] = struct.unpack("<H", raw_record[18:20])[0]
@@ -88,6 +91,7 @@ def parse_header(header, raw_record):
 def parse_attribute_header(record, dict):
     # includes the header ~of the header
     dict['Attribute size'] = struct.unpack("<I", record[4:8])[0]
+    dict['Attribute size entry'] = struct.unpack("<H", record[4:6])[0]
     dict['Resident'] = struct.unpack("<B", record[8:9])[0]
     # This part gives the number of character of the name. As encoded in utf-16, multiplied by 2 to consider 2 bytes.
     dict['Attribute name length'] = struct.unpack("<B", record[9:10])[0] * 2
@@ -106,7 +110,7 @@ def parse_attribute_header(record, dict):
         case _:
             dict['Flags (verbose)'] = 'Unknown'
 
-    dict['Attribute ID'] = struct.unpack("<H", record[14:16])[0]
+    dict['Attribute number in entry'] = struct.unpack("<H", record[14:16])[0]
 
     # 4 cases : attributes can be resident-have a name, resident-no name, non-resident-have a name, non-resident-no name
     # Content of the attribute/Run list do not start at the same offset depending the case
@@ -203,13 +207,15 @@ def parse_standard(standard, raw_record, next_offset):
         # Last update sequence number, direct index into the $UsnJrnl
         standard['Update Sequence Number (USN)'] = struct.unpack("<Q", record[64:72])[0]
 
-    return standard
+    next = standard['Attribute size entry'] + standard['Attribute first offset']
+
+    return standard, next
 
 
 ########################## $ATTRIBUTE_LIST ATTRIBUTE ###################################################################
 
 # This attribute appears when there are too much attributes to store for an MFT entry. Attributes are listed
-# and stored in this attribute.
+# and stored in this attribute. Can be either resident or non-resident
 # The list is sorted by : 1. attribute type 2. Attribute name (if present) 3. Sequence number
 def parse_attribute_list(attribute_list, raw_record, next_offset):
     attribute_list.clear()
@@ -225,6 +231,7 @@ def parse_attribute_list(attribute_list, raw_record, next_offset):
         case 0:
             content_offset = attribute_list['Attribute content start']
             record = record[content_offset:]
+            # TODO: change here?
             length = attribute_list['Attribute size'] - attribute_list['Attribute header size']
 
             attributes = {}
@@ -241,11 +248,14 @@ def parse_attribute_list(attribute_list, raw_record, next_offset):
         case 1:
             attribute_list['Data run'] = run_list(attribute_list['Run list\'s start offset'], record)
 
-    return attribute_list
+    next = attribute_list['Attribute size entry'] + attribute_list['Attribute first offset']
+
+    return attribute_list, next
 
 
 ########################## $FILE_NAME ATTRIBUTE ########################################################################
 
+# This attribute is always resident
 def parse_filename(filename, raw_record, next_offset):
     filename.clear()
     filename['Attribute first offset'] = next_offset
@@ -258,17 +268,23 @@ def parse_filename(filename, raw_record, next_offset):
     content_offset = filename['Attribute content start']
 
     record = record[content_offset:]
+    # On 8 bytes normally, the last 2 concern the sequence number of the parent entry
     filename['Parent entry number'] = unpack6(record[:6])
+    filename['Parent entry sequence number'] = struct.unpack('<H', record[6:8])[0]
     # timezone en UTC !
     filename['Creation time'] = convert_filetime(struct.unpack("<Q", record[8:16])[0])
     filename['Modification time'] = convert_filetime(struct.unpack("<Q", record[16:24])[0])
     filename['Entry modification time'] = convert_filetime(struct.unpack("<Q", record[24:32])[0])
     filename['Last accessed time'] = convert_filetime(struct.unpack("<Q", record[32:40])[0])
+    filename['Allocated size of file'] = struct.unpack('<Q', record[40:48])[0]
+    filename['Actual size of file'] = struct.unpack('<Q', record[48:56])[0]
     filename['Filename length'] = struct.unpack("<B", record[64:65])[0] * 2
     length = filename['Filename length']
     filename['Filename'] = record[66:66 + length].decode('utf-16')
 
-    return filename
+    next = filename['Attribute size entry'] + filename['Attribute first offset']
+
+    return filename, next
 
 
 ########################## $OBJECT_ID ATTRIBUTE ########################################################################
@@ -283,7 +299,10 @@ def parse_objectid(object_id, raw_record, next_offset):
     record = raw_record[next_offset:]
     object_id['Attribute first offset'] = next_offset
     parse_attribute_header(record, object_id)
-    return object_id
+
+    next = object_id['Attribute size entry'] + object_id['Attribute first offset']
+
+    return object_id, next
 
 
 ########################## $SECURITY_DESCRIPTOR ATTRIBUTE ##############################################################
@@ -298,7 +317,10 @@ def parse_security_descriptor(security_descriptor, raw_record, next_offset):
     record = raw_record[next_offset:]
     security_descriptor['Attribute first offset'] = next_offset
     parse_attribute_header(record, security_descriptor)
-    return security_descriptor
+
+    next = security_descriptor['Attribute size entry'] + security_descriptor['Attribute first offset']
+
+    return security_descriptor, next
 
 
 ########################## $SVOLUME_NAME ATTRIBUTE #####################################################################
@@ -309,11 +331,13 @@ def parse_volume_name(volume_name, raw_record, next_offset):
 
     if raw_record[next_offset:next_offset + 4] != b'\x60\x00\x00\x00':
         raise Exception("Wrong start of VOLUME_NAME attribute")
-    else:
-        record = raw_record[next_offset:]
-        volume_name['Attribute first offset'] = next_offset
-        parse_attribute_header(record, volume_name)
-        return volume_name
+
+    record = raw_record[next_offset:]
+    volume_name['Attribute first offset'] = next_offset
+    parse_attribute_header(record, volume_name)
+    next = volume_name['Attribute size entry'] + volume_name['Attribute first offset']
+
+    return volume_name, next
 
 
 ########################## $VOLUME_INFORMATION ATTRIBUTE ###############################################################
@@ -324,11 +348,14 @@ def parse_volume_information(volume_information, raw_record, next_offset):
 
     if raw_record[next_offset:next_offset + 4] != b'\x70\x00\x00\x00':
         raise Exception("Wrong start of VOLUME_INFORMATION attribute")
-    else:
-        record = raw_record[next_offset:]
-        volume_information['Attribute first offset'] = next_offset
-        parse_attribute_header(record, volume_information)
-        return volume_information
+
+    record = raw_record[next_offset:]
+    volume_information['Attribute first offset'] = next_offset
+    parse_attribute_header(record, volume_information)
+
+    next = volume_information['Attribute size entry'] + volume_information['Attribute first offset']
+
+    return volume_information, next
 
 
 ########################## $DATA ATTRIBUTE #############################################################################
@@ -354,12 +381,12 @@ def run_list(first_off, record):
     return run_list
 
 
-def parse_data(data, raw_record, offset, k):
+def parse_data(data, raw_record, offset):
     data.clear()
 
     if raw_record[offset:offset + 4] != b'\x80\x00\x00\x00':
         # raise Exception(f"Wrong start of DATA attribute at entry {k}")
-        print(f'There was a problem at entry {k} with the DATA attribute')
+        print(f'There was a problem with the DATA attribute')
         return None
     record = raw_record[offset:]
 
@@ -372,11 +399,56 @@ def parse_data(data, raw_record, offset, k):
         # run list made of tuples : (position of clusters, number of clusters)
         data['Run list'] = run_list(first_off, record)
 
-    return data
+    next = data['Attribute size entry'] + data['Attribute first offset']
+
+    return data, next
+
+
+########################## $INDEX_ROOT ATTRIBUTE #######################################################################
+
+# This attribute is always resident, always the root of the index tree and store a small list of index entries
+# 16 bytes header, followed by a node header and a list of index entries
+def parse_index_root(index_root, raw_record, next_offset):
+    index_root.clear()
+
+    if raw_record[next_offset:next_offset + 4] != b'\x90\x00\x00\x00':
+        raise Exception("Wrong start of INDEX_ROOT attribute")
+
+    record = raw_record[next_offset:]
+    index_root['Attribute first offset'] = next_offset
+    parse_attribute_header(record, index_root)
+
+    # Parsing the index root header
+    start = index_root['Attribute content start']
+    record = record[start:]
+    # Attribute type ID = 0 if index entry doesn't use an attribute
+    # TODO: attention ?
+    index_root['Attribute type ID'] = struct.unpack('<I', record[0:4])[0]
+    index_root['Type'] = attributes_ID[index_root['Attribute type ID']]
+    index_root['Collation rule'] = struct.unpack('<I', record[4:8])[0]
+    index_root['Index entry size'] = struct.unpack('<I', record[8:12])[0]
+    # Number of clusters or logarithm of the size (given in the boot sector)
+    index_root['Cluster per index record'] = struct.unpack('<B', record[12:13])[0]
+    index_root.update(parse_index_node_header(index_node, record[16:]))
+
+    # Parses only directory indexes for now
+    if index_root['Type'] == '$FILE_NAME':
+        match index_root['Index flag']:
+            case 0:
+                index_root.update(parse_index_entry(index_entry, index_root, record[32:]))
+            case 1:
+                pass
+            case _:
+                raise ValueError('Invalid flag value (0 or 1)')
+
+    next = index_root['Attribute size entry'] + index_root['Attribute first offset']
+
+    return index_root, next
 
 
 ########################## $INDEX NODE HEADER ##########################################################################
 
+# This header is the root of the B-Tree
 def parse_index_node_header(index_node, record):
     index_node.clear()
 
@@ -405,7 +477,8 @@ def parse_index_entry(index_entry, index, record):
         case 0:
             while length_stream > 0:
                 try:
-                    index_entry['MFT file reference'] = unpack6(record[0:6])
+                    # The file reference is on 8 bytes : 6 for the MFT entry number and the last 2 for the sequence number
+                    index_entry['MFT file reference'] = (unpack6(record[0:6]), struct.unpack('<H', record[6:8]))
                     index_entry['Length of entry'] = struct.unpack('<H', record[8:10])[0]
                     index_entry['Length of stream'] = struct.unpack('<H', record[10:12])[0]
                     index_entry['Index entry flag'] = struct.unpack('<I', record[12:16])[0]
@@ -448,42 +521,6 @@ def parse_index_entry(index_entry, index, record):
     return index
 
 
-########################## $INDEX_ROOT ATTRIBUTE #######################################################################
-
-# This attribute is always resident, always the root of the index tree and store a small list of index entries
-# 16 bytes header, followed by a node header and a list of index entries
-def parse_index_root(index_root, raw_record, next_offset):
-    index_root.clear()
-
-    if raw_record[next_offset:next_offset + 4] != b'\x90\x00\x00\x00':
-        raise Exception("Wrong start of INDEX_ROOT attribute")
-
-    record = raw_record[next_offset:]
-    index_root['Attribute first offset'] = next_offset
-    parse_attribute_header(record, index_root)
-
-    # Parsing the index root header
-    start = index_root['Attribute content start']
-    record = record[start:]
-    index_root['Attribute type ID'] = struct.unpack('<I', record[0:4])[0]
-    index_root['Type'] = attributes_ID[index_root['Attribute type ID']]
-    index_root['Collation rule'] = struct.unpack('<I', record[4:8])[0]
-    index_root['Index entry size'] = struct.unpack('<I', record[8:12])[0]
-    # Number of clusters or logarithm of the size (given in the boot sector)
-    index_root['Cluster per index record'] = struct.unpack('<B', record[12:13])[0]
-    index_root.update(parse_index_node_header(index_node, record[16:]))
-
-    # Parses only directory indexes for now
-    if index_root['Type'] == '$FILE_NAME':
-        match index_root['Index flag']:
-            case 0:
-                index_root.update(parse_index_entry(index_entry, index_root, record[32:]))
-            case 1:
-                pass
-            case _:
-                raise ValueError('Invalid flag value (0 or 1)')
-    return index_root
-
 
 ########################## $INDEX_ALLOCATION ATTRIBUTE #################################################################
 
@@ -505,8 +542,9 @@ def parse_index_allocation(index_allocation, raw_record, next_offset):
     # The content of the following bitmap attribute tells which index record is in use.
     #TODO : limiter aux I30 ? Prend aussi les security descriptor, etc.
     index_allocation['Data run'] = run_list(index_allocation['Run list\'s start offset'], record)
+    next = index_allocation['Attribute size entry'] + index_allocation['Attribute first offset']
 
-    return index_allocation
+    return index_allocation, next
 
 
 ########################## $BITMAP ATTRIBUTE ###########################################################################
@@ -516,13 +554,64 @@ def parse_bitmap(bitmap, raw_record, next_offset):
     bitmap.clear()
 
     if raw_record[next_offset:next_offset + 4] != b'\xB0\x00\x00\x00':
-        raise Exception("Wrong start of INDEX_ALLOCATION attribute")
+        raise Exception("Wrong start of BITMAP attribute")
 
     record = raw_record[next_offset:]
     bitmap['Attribute first offset'] = next_offset
     parse_attribute_header(record, bitmap)
-    return bitmap
 
+    next = bitmap['Attribute size entry'] + bitmap['Attribute first offset']
+
+    return bitmap, next
+
+########################## $REPARSE_POINT ATTRIBUTE ####################################################################
+
+# Not considered
+def parse_reparse_point(reparse_point, raw_record, next_offset):
+    reparse_point.clear()
+
+    if raw_record[next_offset:next_offset + 4] != b'\xC0\x00\x00\x00':
+        raise Exception("Wrong start of $REPARSE_POINT attribute")
+
+    record = raw_record[next_offset:]
+    reparse_point['Attribute first offset'] = next_offset
+    parse_attribute_header(record, reparse_point)
+    next = reparse_point['Attribute size entry'] + reparse_point['Attribute first offset']
+
+    return reparse_point, next
+
+########################## $EA_INFORMATION_ ATTRIBUTE ##################################################################
+
+# Not considered
+def parse_ea_information(ea_information, raw_record, next_offset):
+    ea_information.clear()
+
+    if raw_record[next_offset:next_offset + 4] != b'\xD0\x00\x00\x00':
+        raise Exception("Wrong start of $EA_INFORMATION attribute")
+
+    record = raw_record[next_offset:]
+    ea_information['Attribute first offset'] = next_offset
+    parse_attribute_header(record, ea_information)
+
+    next = ea_information['Attribute size entry'] + ea_information['Attribute first offset']
+
+    return ea_information, next
+
+########################## $EA ATTRIBUTE ###############################################################################
+
+# Not considered
+def parse_ea(ea, raw_record, next_offset):
+    ea.clear()
+
+    if raw_record[next_offset:next_offset + 4] != b'\xE0\x00\x00\x00':
+        raise Exception("Wrong start of EA attribute")
+
+    record = raw_record[next_offset:]
+    ea['Attribute first offset'] = next_offset
+    parse_attribute_header(record, ea)
+    next = ea['Attribute size entry'] + ea['Attribute first offset']
+
+    return ea, next
 
 ########################## $LOGGED_UTILITY_STREAM ATTRIBUTE ############################################################
 
@@ -531,12 +620,14 @@ def parse_logged_utility_stream(logged_utility_stream, raw_record, next_offset):
     logged_utility_stream.clear()
 
     if raw_record[next_offset:next_offset + 4] != b'\x00\x01\x00\x00':
-        raise Exception("Wrong start of INDEX_ALLOCATION attribute")
+        raise Exception("Wrong start of LOGGED_UTILITY_STREAM attribute")
 
     record = raw_record[next_offset:]
     logged_utility_stream['Attribute first offset'] = next_offset
     parse_attribute_header(record, logged_utility_stream)
-    return logged_utility_stream
+    next = logged_utility_stream['Attribute size entry'] + logged_utility_stream['Attribute first offset']
+
+    return logged_utility_stream, next
 
 
 ########################################################################################################################
@@ -558,99 +649,53 @@ def parse_all(records_dict):
             pass
         else:
             next_offset = header['First attribute offset']
-            if v[next_offset:next_offset + 4] == b'\x10\x00\x00\x00':
-                MFT_record['$STANDARD_INFORMATION'] = parse_standard(standard, v, next_offset)
-                next_offset = MFT_record['$STANDARD_INFORMATION']['Attribute first offset'] + \
-                              MFT_record['$STANDARD_INFORMATION']['Attribute size']
-
-            if v[next_offset:next_offset + 4] == b'\x20\x00\x00\x00':
-                MFT_record['$ATTRIBUTE_LIST'] = parse_attribute_list(attribute_list, v, next_offset)
-                next_offset = MFT_record['$ATTRIBUTE_LIST']['Attribute first offset'] + \
-                              MFT_record['$ATTRIBUTE_LIST']['Attribute size']
-
-            if v[next_offset:next_offset + 4] == b'\x30\x00\x00\x00':
-                MFT_record['$FILE_NAME'] = parse_filename(filename, v, next_offset)
-                next_offset = MFT_record['$FILE_NAME']['Attribute first offset'] + MFT_record['$FILE_NAME'][
-                    'Attribute size']
-
-            # TODO : quid des entrées avec 3 $FILE_NAME et des parent number différents ?! Dammit
-            filenames = []
-            i = 2
+            i, j = 1, 1
             while True:
-                f = {}
-                # A file can have the two types of filename format (DOS and Win32)
-                if v[next_offset:next_offset + 4] == b'\x30\x00\x00\x00':
-                    MFT_record[f'$FILE_NAME{str(i)}'] = parse_filename(f, v, next_offset)
-                    next_offset = MFT_record[f'$FILE_NAME{str(i)}']['Attribute first offset'] +\
-                                  MFT_record[f'$FILE_NAME{str(i)}']['Attribute size']
-                    i += 1
-                else:
-                    break
-
-            if v[next_offset:next_offset + 4] == b'\x40\x00\x00\x00':
-                MFT_record['$OBJECT_ID'] = parse_objectid(object_id, v, next_offset)
-                next_offset = MFT_record['$OBJECT_ID']['Attribute first offset'] + \
-                              MFT_record['$OBJECT_ID']['Attribute size']
-
-            if v[next_offset:next_offset + 4] == b'\x50\x00\x00\x00':
-                MFT_record['$SECURITY_DESCRIPTOR'] = parse_security_descriptor(security_descriptor, v, next_offset)
-                next_offset = MFT_record['$SECURITY_DESCRIPTOR']['Attribute first offset'] + \
-                              MFT_record['$SECURITY_DESCRIPTOR']['Attribute size']
-
-            if v[next_offset:next_offset + 4] == b'\x60\x00\x00\x00':
-                MFT_record['$VOLUME_NAME'] = parse_volume_name(volume_name, v, next_offset)
-                next_offset = MFT_record['$VOLUME_NAME']['Attribute first offset'] + \
-                              MFT_record['$VOLUME_NAME']['Attribute size']
-
-            if v[next_offset:next_offset + 4] == b'\x70\x00\x00\x00':
-                MFT_record['$VOLUME_INFORMATION'] = parse_volume_information(volume_information, v, next_offset)
-                next_offset = MFT_record['$VOLUME_INFORMATION']['Attribute first offset'] + \
-                              MFT_record['$VOLUME_INFORMATION']['Attribute size']
-
-            if v[next_offset:next_offset + 4] == b'\x80\x00\x00\x00':
-                MFT_record['$DATA'] = parse_data(data, v, next_offset, k)
-                next_offset = MFT_record['$DATA']['Attribute first offset'] + \
-                              MFT_record['$DATA']['Attribute size']
-            i = 1
-            while True:
-                d = {}
-                if v[next_offset:next_offset + 4] == b'\x80\x00\x00\x00':
-                    MFT_record[f'ADS{str(i)}'] = parse_data(d, v, next_offset, k)
-                    next_offset = MFT_record[f'ADS{str(i)}']['Attribute first offset'] + MFT_record[f'ADS{str(i)}'][
-                        'Attribute size']
-                    i += 1
-                else:
-                    break
-
-            if v[next_offset:next_offset + 4] == b'\x90\x00\x00\x00':
-                MFT_record['$INDEX_ROOT'] = parse_index_root(index_root, v, next_offset)
-                next_offset = MFT_record['$INDEX_ROOT']['Attribute first offset'] + \
-                              MFT_record['$INDEX_ROOT']['Attribute size']
-
-                if v[next_offset:next_offset + 4] == b'\x90\x00\x00\x00':
-                    MFT_record['$INDEX_ROOT'] = parse_index_root(index_root, v, next_offset)
-                    next_offset = MFT_record['$INDEX_ROOT']['Attribute first offset'] + \
-                                  MFT_record['$INDEX_ROOT']['Attribute size']
-                    MFT[k] = copy.deepcopy(MFT_record)
-
-            if v[next_offset:next_offset + 4] == b'\xA0\x00\x00\x00':
-                MFT_record['$INDEX_ALLOCATION'] = parse_index_allocation(index_allocation, v, next_offset)
-                next_offset = MFT_record['$INDEX_ALLOCATION']['Attribute first offset'] + \
-                              MFT_record['$INDEX_ALLOCATION']['Attribute size']
-
-            if v[next_offset:next_offset + 4] == b'\xB0\x00\x00\x00':
-                MFT_record['$BITMAP'] = parse_bitmap(bitmap, v, next_offset)
-                next_offset = MFT_record['$BITMAP']['Attribute first offset'] + \
-                              MFT_record['$BITMAP']['Attribute size']
-
-            if v[next_offset:next_offset + 4] == b'\x00\x01\x00\x00':
-                MFT_record['$LOGGED_UTILITY_STREAM'] = parse_logged_utility_stream(logged_utility_stream, v,
-                                                                                   next_offset)
-                next_offset = MFT_record['$LOGGED_UTILITY_STREAM']['Attribute first offset'] + \
-                              MFT_record['$LOGGED_UTILITY_STREAM']['Attribute size']
-
-            if v[next_offset:next_offset + 4] == b'\xFF\xFF\xFF\xFF':
-                MFT[k] = copy.deepcopy(MFT_record)
+                match v[next_offset:next_offset + 4]:
+                    case b'\x10\x00\x00\x00':
+                        MFT_record['$STANDARD_INFORMATION'], next_offset = parse_standard(standard, v, next_offset)
+                    case b'\x20\x00\x00\x00':
+                        MFT_record['$ATTRIBUTE_LIST'], next_offset = parse_attribute_list(attribute_list, v, next_offset)
+                    case b'\x30\x00\x00\x00':
+                        # A file can have the two types of filename format (DOS and Win32)
+                        if i == 1:
+                            MFT_record['$FILE_NAME'], next_offset = parse_filename(filename, v, next_offset)
+                        else:
+                            f = {}
+                            MFT_record[f'$FILE_NAME{str(i+1)}'], next_offset = parse_filename(f, v, next_offset)
+                        i += 1
+                    case b'\x40\x00\x00\x00':
+                        MFT_record['$OBJECT_ID'], next_offset = parse_objectid(object_id, v, next_offset)
+                    case b'\x50\x00\x00\x00':
+                        MFT_record['$SECURITY_DESCRIPTOR'], next_offset = parse_security_descriptor(security_descriptor, v, next_offset)
+                    case b'\x60\x00\x00\x00':
+                        MFT_record['$VOLUME_NAME'], next_offset = parse_volume_name(volume_name, v, next_offset)
+                    case b'\x70\x00\x00\x00':
+                        MFT_record['$VOLUME_INFORMATION'], next_offset = parse_volume_information(volume_information, v, next_offset)
+                    case b'\x80\x00\x00\x00':
+                        if j == 1:
+                            MFT_record['$DATA'], next_offset = parse_data(data, v, next_offset)
+                        else:
+                            d = {}
+                            MFT_record[f'ADS{str(j)}'], next_offset = parse_data(d, v, next_offset)
+                        j += 1
+                    case b'\x90\x00\x00\x00':
+                        MFT_record['$INDEX_ROOT'], next_offset = parse_index_root(index_root, v, next_offset)
+                    case b'\xA0\x00\x00\x00':
+                        MFT_record['$INDEX_ALLOCATION'], next_offset = parse_index_allocation(index_allocation, v, next_offset)
+                    case b'\xB0\x00\x00\x00':
+                        MFT_record['$BITMAP'], next_offset = parse_bitmap(bitmap, v, next_offset)
+                    case b'\xC0\x00\x00\x00':
+                        MFT_record['$REPARSE_POINT'], next_offset = parse_reparse_point(reparse_point, v, next_offset)
+                    case b'\xD0\x00\x00\x00':
+                        MFT_record['$EA_INFORMATION'], next_offset = parse_ea_information(ea_information, v, next_offset)
+                    case b'\xE0\x00\x00\x00':
+                        MFT_record['$EA'], next_offset = parse_ea(ea, v, next_offset)
+                    case b'\x00\x01\x00\x00':
+                        MFT_record['$LOGGED_UTILITY_STREAM'], next_offset = parse_logged_utility_stream(logged_utility_stream, v, next_offset)
+                    case b'\xFF\xFF\xFF\xFF':
+                        MFT[k] = copy.deepcopy(MFT_record)
+                        break
 
             MFT_record.clear()
 
@@ -734,3 +779,5 @@ if __name__ == '__main__':
         logging.info(f'Writting to a CSV file.. this operation may take some time')
         MFT_to_csv(MFT_parsed, args.csv)
         logging.info(f'CSV file of the $MFT is written !')
+
+    # scatter_plot(args.json)

@@ -195,3 +195,24 @@ logged_utility_stream = {
     'Content size': '',
     'Content start offset (resident)': ''
 }
+
+ea_information = {
+    'Attribute first offset': '',
+    'Attribute size': '',
+    'Resident': '',
+    'Content start offset': '',
+    'Resident (verbose)': '',
+    'Content size': '',
+    'Content start offset (resident)': ''
+}
+
+ea = {
+    'Attribute first offset': '',
+    'Attribute size': '',
+    'Resident': '',
+    'Content start offset': '',
+    'Resident (verbose)': '',
+    'Content size': '',
+    'Content start offset (resident)': ''
+}
+
