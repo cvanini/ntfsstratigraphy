@@ -60,18 +60,19 @@ def log(path, k):
 
 
 if __name__ == '__main__':
-    parser = ArgumentParser(description='bitmap parser : parse bitmap and return the allocation status per cluster')
-    parser.add_argument('-f', '--file', help='$Bitmap file', required=True)
-    parser.add_argument('-a', '--attribute', help='$Bitmap attribute of $MFT file', action='store_true')
-    parser.add_argument('-c', '--csv', help='save output in a csv file', required=False)
+    # parser = ArgumentParser(description='bitmap parser : parse bitmap and return the allocation status per cluster')
+    # parser.add_argument('-f', '--file', help='$Bitmap file', required=True)
+    # parser.add_argument('-a', '--attribute', help='$Bitmap attribute of $MFT file', action='store_true')
+    # parser.add_argument('-c', '--csv', help='save output in a csv file', required=False)
     # parser.add_argument('-e', '--excel', help='save output in a excel sheet', required=False)
-    args = parser.parse_args()
+    # args = parser.parse_args()
 
     # logging.info("Starting to parse the $Bitmap file/$BITMAP attribute")
-    # with open(args.file, 'rb') as file:
-    #     data = file.read()
-    #     bitmap = parse_bitmap(data)
-    #     bitmap_attribute = parse_bitmap_attribute(data)
+    with open("C:\\Users\\celin\\UNIVERSITÉ\\MA2S1\\Cas Pratique Transversaux\\Image disque dur\\2021-10-08_08-17-14\Bitmap_MFT", 'rb') as file:
+        data = file.read()
+        bitmap = parse_bitmap(data)
+        bitmap_attribute = parse_bitmap_attribute(data)
+        print(len(bitmap_attribute))
 
     # if args.attribute:
     #     logging.info(f'There are {len(bitmap_attribute)} entries used in the $MFT')
