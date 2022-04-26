@@ -25,12 +25,4 @@ def delete(path, filename):
 
 if __name__ == '__main__':
 
-    variable = '$I30'
-    match variable:
-        # Index of filenames
-        case '$I30':
-            print('Directory')
-        case '$SDH':
-            print('Security descriptors')
-        case '$SII':
-            print('bloup')
+    delete('E:', '1.txt')

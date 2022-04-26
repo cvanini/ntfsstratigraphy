@@ -9,6 +9,7 @@ import os
 import MFT
 import time
 import boot
+import string
 import bitmap
 import random
 import shutil
@@ -62,8 +63,12 @@ def create(path, size):
 
 
 def delete(path, k):
-    file = os.listdir(path)[-1]
-    subprocess.run(["del", f"{path}\\{str(k-5)}.txt"], shell=True)
+    # subprocess.run(["del", f"{path}\\{str(k-random.randint(1,k))}.txt"], shell=True)
+    try:
+        if os.path.exists(f"{path}\\{k-random.randint(1,k-1)}.txt"):
+            os.remove(f"{path}\\{k-random.randint(1,k-1)}.txt")
+    except Exception:
+        pass
 
 
 # manipulating timestamps with Powershell command lines
@@ -109,7 +114,10 @@ if __name__ == '__main__':
     logger.info("Creating files..")
 
     n = 1
-    while n < 10:
+
+    while True:
+    # To have the disk not full
+    # while n < 800:
         try:
             # creating files directly from the command line :
             # subprocess.run(["fsutil", "file", "createnew", f"{args.volume}\\{str(n)}.txt", f"{args.size}"])
@@ -117,24 +125,26 @@ if __name__ == '__main__':
                 # fixed file size
                 create(args.volume + "\\" + str(n), args.size)
             else:
-                # random file size : 10 bytes to 10 Mb
-                random_size = random.randint(0, 10 * 1024 * 1024)
+                # random file size
+                random_size = random.randint(100, 1024 * 1024 * 10)
                 create(args.volume + "\\" + str(n), random_size)
+                # to create files with random names (test if there is a difference with because of the B+-Tree)
+                # random_string = ''.join(random.choice(string.ascii_lowercase) for i in range(1,6))
+                # create(args.volume + '\\' + str(random_string), random_size)
 
             n += 1
             time.sleep(random.uniform(0.5, 1.5))
 
-            for i in range(1, total, 100):
-                if i == n:
-                    logger.info(f"File #{n} was just created ! Extracting the $Bitmap and the $MFT again")
-                    extract(args.volume, args.stage, n)
-
-            #for j in range(50, max, 100):
+            # to extract the system files at some stage of the process
+            # for i in range(1, total, 100):
+            #     if i == n:
+            #         logger.info(f"File #{n} was just created ! Extracting the $Bitmap and the $MFT again")
+            #         extract(args.volume, args.stage, n)
+            #
+            # for j in range(20, 1000, 30):
             #    if j == n:
-            #        extract(args.volume, args.stage, n)
             #        delete(args.volume, n)
             #        logger.info(f"File {n} was deleted")
-            #        extract(args.volume, args.stage, f"{n}_d")
 
             #if args.backdating:
             #    if n == args.backdating:
