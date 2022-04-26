@@ -1,12 +1,8 @@
 import os
-import shutil
-import subprocess
-from pathlib import PureWindowsPath
-from argparse import ArgumentParser
-from pathlib import Path, WindowsPath
-import logging
-import boot
-from datetime import datetime, timedelta
+import struct
+
+import utils
+import fsparser
 
 
 def create(path, size):
@@ -25,4 +21,14 @@ def delete(path, filename):
 
 if __name__ == '__main__':
 
-    delete('E:', '1.txt')
+    with open('..\data\CT\$MFT', 'rb') as f:
+        data = f.read(1024)
+
+    print(data[0:4])
+    print(data[4:8])
+    b = b'\x00\x1F\x00\xD1'
+    #print(utils.unpack6(b)[0])
+    x, y, z = struct.unpack('<HHH', data[4:10])
+    print(x, y, z)
+    print(x + (y << 16) + (z <<32))
+
