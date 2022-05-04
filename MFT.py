@@ -10,23 +10,20 @@ Sources : File system forensic analysis (B. Carrier, 2005) and https://flatcap.g
 '''
 import sys
 import os
-
-sys.path.append(os.getcwd() + '\\src')
-
 import copy
 import struct
 import logging
-# import pandas as pd
-# import matplotlib as plt
+from tqdm import tqdm
 from ressources.dict import *
-from ressources.utils import *
+from ressources.MFT_utils import *
 from ressources.plot import *
-from ressources.ProgressBar import printProgressBar
 from argparse import ArgumentParser
 
 MFT_RECORD_SIZE = 1024
 
 MFT_logger = logging.getLogger('MFT')
+
+# sys.path.append(os.getcwd() + '\\src')
 
 MFT_record = {
     'header': '',
@@ -79,7 +76,9 @@ def parse_header(header, raw_record):
     header['Entry physical size'] = struct.unpack("<I", raw_record[28:32])[0]
     # Used when multiple entries have to be used for one file : attributes are listed in $ATTRIBUTE_LIST in one
     # base entry and sub-entries contain in their header the MFT entry number of the base entry:
-    header['Base record reference'] = unpack6(raw_record[32:38])
+    header['Base record entry number'] = unpack6(raw_record[32:38])
+    header['Base record sequence number'] = struct.unpack('<H', raw_record[38:40])[0]
+    header['Base record reference'] = ''.join([str(x) for x in raw_record[32:40]])
     header['Next attribute ID'] = struct.unpack("<H", raw_record[40:42])[0]
     header['Entry number'] = struct.unpack("<I", raw_record[44:48])[0]
 
@@ -184,7 +183,7 @@ def parse_standard(standard, raw_record, next_offset):
     content_offset = standard['Attribute content start']
     record = record[content_offset:]
 
-    # Use the function convert_filetime from the module utils.py
+    # Use the function convert_filetime from the module MFT_utils.py
     standard['Creation time'] = convert_filetime(struct.unpack("<Q", record[:8])[0])
     standard['Modification time'] = convert_filetime(struct.unpack("<Q", record[8:16])[0])
     standard['Entry modification time'] = convert_filetime(struct.unpack("<Q", record[16:24])[0])
@@ -378,7 +377,7 @@ def run_list(first_off, record):
         if record[first_off:first_off + 1] == b'\x00':
             break
 
-    return run_list
+    return run_list, run_list[0][0]
 
 
 def parse_data(data, raw_record, offset):
@@ -397,7 +396,7 @@ def parse_data(data, raw_record, offset):
     if data['Resident'] == 1:
         first_off = data['Run list\'s start offset']
         # run list made of tuples : (position of clusters, number of clusters)
-        data['Run list'] = run_list(first_off, record)
+        data['Run list'], data['First cluster'] = run_list(first_off, record)
 
     next = data['Attribute size entry'] + data['Attribute first offset']
 
@@ -458,9 +457,12 @@ def parse_index_node_header(index_node, record):
     index_node['Index flag'] = struct.unpack('<B', record[12:13])[0]
 
     match index_node['Index flag']:
-        case 0: index_node['Index flag (verbose)'] = 'Small index (fits in $INDEX_ROOT)'
-        case 1: index_node['Index flag (verbose)'] = 'Large index (external allocation needed)'
-        case _: raise ValueError("Wrong flag value (only 0 or 1)")
+        case 0:
+            index_node['Index flag (verbose)'] = 'Small index (fits in $INDEX_ROOT)'
+        case 1:
+            index_node['Index flag (verbose)'] = 'Large index (external allocation needed)'
+        case _:
+            raise ValueError("Wrong flag value (only 0 or 1)")
 
     return index_node
 
@@ -523,6 +525,7 @@ def parse_index_entry(index_entry, index, record):
 
     return index
 
+
 ########################## $INDEX_ALLOCATION ATTRIBUTE #################################################################
 
 # This attribute is used when index entries cannot fit in the $INDEX_ROOT (Index flag = 1)
@@ -541,8 +544,9 @@ def parse_index_allocation(index_allocation, raw_record, next_offset):
     # the names, length, etc. of files and directories contained in one parent directory. Its content is not considered
     # yet, as it is only the B-Tree that is used by NTFS to manage files and directories
     # The content of the following bitmap attribute tells which index record is in use.
-    #TODO : limiter aux I30 ? Prend aussi les security descriptor, etc.
-    index_allocation['Data run'] = run_list(index_allocation['Run list\'s start offset'], record)
+    # TODO : limiter aux I30 ? Prend aussi les security descriptor, etc.
+    index_allocation['Data run'], index_allocation['First cluster'] = run_list(
+        index_allocation['Run list\'s start offset'], record)
     next = index_allocation['Attribute size entry'] + index_allocation['Attribute first offset']
 
     return index_allocation, next
@@ -565,6 +569,7 @@ def parse_bitmap(bitmap, raw_record, next_offset):
 
     return bitmap, next
 
+
 ########################## $REPARSE_POINT ATTRIBUTE ####################################################################
 
 # Not considered
@@ -580,6 +585,7 @@ def parse_reparse_point(reparse_point, raw_record, next_offset):
     next = reparse_point['Attribute size entry'] + reparse_point['Attribute first offset']
 
     return reparse_point, next
+
 
 ########################## $EA_INFORMATION_ ATTRIBUTE ##################################################################
 
@@ -598,6 +604,7 @@ def parse_ea_information(ea_information, raw_record, next_offset):
 
     return ea_information, next
 
+
 ########################## $EA ATTRIBUTE ###############################################################################
 
 # Not considered
@@ -613,6 +620,7 @@ def parse_ea(ea, raw_record, next_offset):
     next = ea['Attribute size entry'] + ea['Attribute first offset']
 
     return ea, next
+
 
 ########################## $LOGGED_UTILITY_STREAM ATTRIBUTE ############################################################
 
@@ -635,15 +643,13 @@ def parse_logged_utility_stream(logged_utility_stream, raw_record, next_offset):
 
 MFT = {}
 
+
 # Main function which parses the attributes one by one, if exists. As they are always written by order of attribute ID,
 # the function only checks after the end of every structure, which is the attribute to parse next, or stops if it is
 # the end of the entry.
-def parse_all(records_dict):
-    n = 1
-
-    for k, v in records_dict.items():
-        printProgressBar(n, len(records_dict), stage='parsing records [$MFT]')
-        n += 1
+def parse_attributes(records_dict):
+    # tqdm module is used to print progress bar
+    for k, v in tqdm(records_dict.items(), desc='[MFT]'):
 
         MFT_record['header'] = parse_header(header, v)
         if MFT_record['header'] is None:
@@ -656,44 +662,50 @@ def parse_all(records_dict):
                     case b'\x10\x00\x00\x00':
                         MFT_record['$STANDARD_INFORMATION'], next_offset = parse_standard(standard, v, next_offset)
                     case b'\x20\x00\x00\x00':
-                        MFT_record['$ATTRIBUTE_LIST'], next_offset = parse_attribute_list(attribute_list, v, next_offset)
+                        MFT_record['$ATTRIBUTE_LIST'], next_offset = parse_attribute_list(attribute_list, v,
+                                                                                          next_offset)
                     case b'\x30\x00\x00\x00':
                         # A file can have the two types of filename format (DOS and Win32)
                         if i == 1:
                             MFT_record['$FILE_NAME'], next_offset = parse_filename(filename, v, next_offset)
                         else:
                             f = {}
-                            MFT_record[f'$FILE_NAME{str(i+1)}'], next_offset = parse_filename(f, v, next_offset)
+                            MFT_record[f'$FILE_NAME{str(i)}'], next_offset = parse_filename(f, v, next_offset)
                         i += 1
                     case b'\x40\x00\x00\x00':
                         MFT_record['$OBJECT_ID'], next_offset = parse_objectid(object_id, v, next_offset)
                     case b'\x50\x00\x00\x00':
-                        MFT_record['$SECURITY_DESCRIPTOR'], next_offset = parse_security_descriptor(security_descriptor, v, next_offset)
+                        MFT_record['$SECURITY_DESCRIPTOR'], next_offset = parse_security_descriptor(security_descriptor,
+                                                                                                    v, next_offset)
                     case b'\x60\x00\x00\x00':
                         MFT_record['$VOLUME_NAME'], next_offset = parse_volume_name(volume_name, v, next_offset)
                     case b'\x70\x00\x00\x00':
-                        MFT_record['$VOLUME_INFORMATION'], next_offset = parse_volume_information(volume_information, v, next_offset)
+                        MFT_record['$VOLUME_INFORMATION'], next_offset = parse_volume_information(volume_information, v,
+                                                                                                  next_offset)
                     case b'\x80\x00\x00\x00':
                         if j == 1:
                             MFT_record['$DATA'], next_offset = parse_data(data, v, next_offset)
                         else:
                             d = {}
-                            MFT_record[f'ADS{str(j)}'], next_offset = parse_data(d, v, next_offset)
+                            MFT_record[f'ADS{str(j - 1)}'], next_offset = parse_data(d, v, next_offset)
                         j += 1
                     case b'\x90\x00\x00\x00':
                         MFT_record['$INDEX_ROOT'], next_offset = parse_index_root(index_root, v, next_offset)
                     case b'\xA0\x00\x00\x00':
-                        MFT_record['$INDEX_ALLOCATION'], next_offset = parse_index_allocation(index_allocation, v, next_offset)
+                        MFT_record['$INDEX_ALLOCATION'], next_offset = parse_index_allocation(index_allocation, v,
+                                                                                              next_offset)
                     case b'\xB0\x00\x00\x00':
                         MFT_record['$BITMAP'], next_offset = parse_bitmap(bitmap, v, next_offset)
                     case b'\xC0\x00\x00\x00':
                         MFT_record['$REPARSE_POINT'], next_offset = parse_reparse_point(reparse_point, v, next_offset)
                     case b'\xD0\x00\x00\x00':
-                        MFT_record['$EA_INFORMATION'], next_offset = parse_ea_information(ea_information, v, next_offset)
+                        MFT_record['$EA_INFORMATION'], next_offset = parse_ea_information(ea_information, v,
+                                                                                          next_offset)
                     case b'\xE0\x00\x00\x00':
                         MFT_record['$EA'], next_offset = parse_ea(ea, v, next_offset)
                     case b'\x00\x01\x00\x00':
-                        MFT_record['$LOGGED_UTILITY_STREAM'], next_offset = parse_logged_utility_stream(logged_utility_stream, v, next_offset)
+                        MFT_record['$LOGGED_UTILITY_STREAM'], next_offset = parse_logged_utility_stream(
+                            logged_utility_stream, v, next_offset)
                     case b'\xFF\xFF\xFF\xFF':
                         MFT[k] = copy.deepcopy(MFT_record)
                         break
@@ -703,16 +715,16 @@ def parse_all(records_dict):
     return MFT
 
 
-def main(path, k):
-    with open(f"{path}\\{str(k)}\\$MFT", 'rb') as f:
-        length_MFT = len(f.read())
-        MFT_logger.info(f'There is a total of {length_MFT // 1024} entries in the MFT')
 
+def parse_MFT(path):
+    MFT_logger.info(f'Starting the parsing of the $MFT..')
 
     i = 0
-    j = length_MFT // 1024
+    j = os.path.getsize(path) // 1024
+    MFT_logger.info(f'There is a total of {j} entries in the MFT')
+
     mftRecords = {}
-    with open(f"{path}\\{str(k)}\\$MFT", 'rb') as f:
+    with open(path, 'rb') as f:
         chunk = f.read(MFT_RECORD_SIZE)
         while i < j:
             try:
@@ -723,20 +735,11 @@ def main(path, k):
                 print(f'There was a problem at entry number {i}')
                 break
 
-    MFT_parsed = parse_all(mftRecords)
+    MFT_parsed = parse_attributes(mftRecords)
     MFT_parsed = parse_tree(MFT_parsed)
-    MFT_logger.info(
-        f'The parsing has finished successfully. {len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
+    MFT_logger.info(f'The parsing has finished successfully. {len(MFT_parsed)}/{j} used entries in the MFT')
 
-    MFT_logger.info(f'Writting to a CSV file.. this operation may take some time')
-    MFT_to_csv(MFT_parsed, f"{path}\\MFT_{str(k)}.csv")
-    MFT_logger.info(f'CSV file of the $MFT is written !')
-
-
-def log(path, k):
-    MFT_logger.info(f'Starting the parsing of the $MFT..')
-    main(path, k)
-    MFT_logger.info(f'Process finished !')
+    return MFT_parsed
 
 
 if __name__ == '__main__':
@@ -744,18 +747,20 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--file', help='MFT file', required=True)
     parser.add_argument('-c', '--csv', help='output MFT content into a csv file', required=False)
     parser.add_argument('-j', '--json', help='output MFT content into a csv json', required=False)
-    parser.add_argument('-p', '--path', help='if present, reconstruct the path of the files in the volume', action='store_true', required=False)
-
+    #parser.add_argument('-p', '--path', help='if present, reconstruct the path of the files in the volume',
+                        #action='store_true', required=False)
 
     args = parser.parse_args()
 
-    with open(args.file, 'rb') as f:
-        length_MFT = len(f.read())
-        logging.info(f'Starting the parsing of the $MFT..')
-        logging.info(f'There is a total of {length_MFT // 1024} entries in the MFT')
+    logging.basicConfig(format='%(asctime)s - %(name)-12s: %(message)s',
+                        datefmt='[%d.%m.%Y %H:%M:%S]', level=logging.INFO,
+                        handlers=[logging.FileHandler(f'{args.output}\\bitmap.txt'), logging.StreamHandler()])
 
     i = 0
-    j = length_MFT // 1024
+    j = os.path.getsize(args.file) // 1024
+    logging.info(f'Starting the parsing of the $MFT..')
+    logging.info(f'There is a total of {j} entries in the MFT')
+
     mftRecords = {}
     with open(args.file, 'rb') as f:
         chunk = f.read(MFT_RECORD_SIZE)
@@ -768,17 +773,13 @@ if __name__ == '__main__':
                 print(f'There was a problem at entry number {i}')
                 break
 
-    MFT_parsed = parse_all(mftRecords)
+    MFT_parsed = parse_attributes(mftRecords)
     MFT_parsed = parse_tree(MFT_parsed)
     logging.info(
-        f'The parsing has finished successfully \n{len(MFT_parsed)}/{length_MFT // 1024} used entries in the MFT')
+        f'The parsing has finished successfully \n{len(MFT_parsed)}/{j} used entries in the MFT')
 
     if args.json:
         MFT_to_json(MFT_parsed, args.json)
 
     if args.csv:
-        logging.info(f'Writting to a CSV file.. this operation may take some time')
         MFT_to_csv(MFT_parsed, args.csv)
-        logging.info(f'CSV file of the $MFT is written !')
-
-    # scatter_plot(args.json)

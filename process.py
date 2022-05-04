@@ -1,5 +1,5 @@
 #### Céline Vanini
-#### Main module processing the experiment from creating files to extract system files of interest
+#### Main module processing the experiments from creating files to extract system files of interest
 
 # The script must be executed as administrator in a Powershell console !
 # Do not run it on your volume ! It would be overwritten :)
@@ -12,44 +12,56 @@ import random
 import shutil
 import logging
 import subprocess
+from ressources.MFT_utils import *
 from datetime import datetime, timedelta
 from argparse import ArgumentParser
 
+logger = logging.getLogger('process')
 
-def extract(volume, stage, n):
+def extract_from_volume(volume, stage, n):
+    logger.info('Extracting $Bitmap, $Boot and $MFT')
+
     curr = os.getcwd()
-    os.mkdir(os.getcwd() + f'\\data\\{stage}\\{str(n)}')
+    path = f'{curr}\\data\\{stage}\\{str(n)}'
+    os.mkdir(path)
 
     # Extracting and parsing the $boot to obtain volume information
     if n == 0:
-        subprocess.run(['icat.exe', f'\\\\.\\{volume}', '7', '>', f"{curr}\\data\\{stage}\\{str(n)}\\$Boot"],
-                       cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
-        boot.log(f'{curr}\\data\\{stage}\\{str(n)}\\$Boot')
-
+        subprocess.run(['icat.exe', f'\\\\.\\{volume}', '7', '>', f"{path}\\$Boot"], cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
+        boot.parse_boot(f'{path}\\$Boot')
     # Parsing the $BITMAP attribute in the entry 0 of the $MFT (used for the MFT file itself..)
     # It contains the number of entries that are used in the $MFT, so can be compared with the result of the
     # MTF.py script, to be sure it parsed all entries.
-    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '0-176', '>', f"{curr}\\data\\{stage}\\{str(n)}\\MFT_bitmap"],
-                   cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
-    # command to copy the $Bitmap of the specified volume (entry 6) and parse it with the bitmap.py python script
-    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '6', '>', f"{curr}\\data\\{stage}\\{str(n)}\\$Bitmap"],
-                   cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
-    bitmap.log(f"{curr}\\data\\{stage}", n)
-    # command to copy the $MFT of the specified volume (entry 0) and parse it with the MFT.py python script
-    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '0', '>', f"{curr}\\data\\{stage}\\{str(n)}\\$MFT"],
-                   cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
-    MFT.log(f"{curr}\\data\\{stage}", n)
+    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '0-176', '>', f"{path}\\MFT_bitmap"], cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
+    # command to copy the $Bitmap of the specified volume (entry 6)
+    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '6', '>', f"{path}\\$Bitmap"], cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
+    # command to copy the $MFT of the specified volume (entry 0)
+    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '0', '>', f"{path}\\$MFT"], cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
+
+    return path
 
 
-def parse(file):
-    pass
+def parse_all(path):
+    bitmap_dict = bitmap.parse_bitmap(f'{path}\\$Bitmap')
+    bitmap.to_csv(path, bitmap_dict)
+    len = parse_bitmap_MFT(path)
+    MFT_dict = MFT.parse_MFT(f'{path}\\$MFT')
 
-def extract_USN_logfile(volume, stage):
-    curr = os.getcwd()
-    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '11', '>', f"{curr}\\data\\{stage}\\USN_journal"],
-                   cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
-    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '2', '>', f"{curr}\\data\\{stage}\\$LogFile"],
-                   cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
+    logger.info(f'There are {len} used entries in the MFT bitmap attribute')
+    if len == len(MFT_dict):
+        logger.info(f'All entries were extracted during the process')
+    else:
+        logger.info(f'Check the script, errors might have occured')
+    MFT_to_csv(f"{path}\\MFT.csv", MFT_dict)
+
+
+# def extract_USN_logfile(volume, stage):
+#     curr = os.getcwd()
+#     subprocess.run(['icat.exe', f'\\\\.\\{volume}', '11', '>', f"{curr}\\data\\{stage}\\USN_journal"],
+#                    cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
+#     subprocess.run(['icat.exe', f'\\\\.\\{volume}', '2', '>', f"{curr}\\data\\{stage}\\$LogFile"],
+#                    cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
+
 
 # create files of the specified size, in bytes.
 def create(path, size):
@@ -81,16 +93,16 @@ def backdating(path):
 
 
 if __name__ == '__main__':
+    # TODO: add image file support (create main.py?)
     parser = ArgumentParser()
     parser.add_argument('-s', '--size', help='Size of the file to be created (in bytes), if not specified, creates files of random size',
                         type=int, required=False)
     parser.add_argument('-v', '--volume', help='Volume to process (i.e C:)', type=str, required=True)
     parser.add_argument('-n', '--stage', help='Stage of the test being processed (i.e 1_creation)', type=str, required=True)
-    # parser.add_argument('-p', '--path', help='if present, reconstruct the path of the files in the volume', action='store_true', required=False)
     parser.add_argument('-i', '--image', help='image file to analyze', required=False)
 
-    parser.add_argument('-b', '--backdating', help='change the date of one file, requires to give a date', type=int, required=False)
-    parser.add_argument('-d', '--delete', help='pseudo-randomly delete files, requires to give a number', type=str, required=False)
+    # parser.add_argument('-b', '--backdating', help='change the date of one file, requires to give a date', type=int, required=False)
+    # parser.add_argument('-d', '--delete', help='pseudo-randomly delete files, requires to give a number', type=str, required=False)
     # parser.add_argument('-o', '--output', help='Destination directory for the $MFT and $bitmap files', required=True)
     args = parser.parse_args()
 
@@ -99,18 +111,17 @@ if __name__ == '__main__':
 
     logging.basicConfig(filename=f'{curr}\\data\\{args.stage}\\process.txt', format='%(asctime)s - %(name)-12s: %(message)s',
                         datefmt='[%d.%m.%Y %H:%M:%S]', level=logging.INFO)
-    logger = logging.getLogger('process')
+
     logger.info('Starting to process')
     logger.info(f'Current stage : {args.stage}')
 
     total, used, free = shutil.disk_usage(args.volume)
     logger.info(f'The volume has a capacity of {total} bytes')
-    logger.info('Extracting $Bitmap, $Boot and $MFT at blank')
     extract(args.volume, args.stage, 0)
     logger.info("Creating files..")
 
     n = 1
-    while n < 12:
+    while True:
         try:
             # creating files directly from the command line :
             # subprocess.run(["fsutil", "file", "createnew", f"{args.volume}\\{str(n)}.txt", f"{args.size}"])
@@ -127,8 +138,9 @@ if __name__ == '__main__':
 
             for i in range(1, total, 100):
                 if i == n:
-                    logger.info(f"File #{n} was just created ! Extracting the $Bitmap and the $MFT again")
-                    extract(args.volume, args.stage, n)
+                    logger.info(f"File #{n} was just created !")
+                    p = extract(args.volume, args.stage, n)
+                    parse_all(p)
 
             #for j in range(50, max, 100):
             #    if j == n:

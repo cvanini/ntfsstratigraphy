@@ -1,4 +1,5 @@
 python 3.10.0
+tqdm
 pandas
 matplotlib
-seaborn
+plotly

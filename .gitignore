@@ -7,6 +7,7 @@ tests/test.py
 *.py[cod]
 *$py.class
 .idea/
+bitmap.txt
 
 # C extensions
 *.so
