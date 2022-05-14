@@ -3,3 +3,5 @@ tqdm
 pandas
 matplotlib
 plotly
+IPython
+chart_studio

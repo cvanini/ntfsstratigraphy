@@ -1,8 +1,8 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 /$MFT
-/outputs
-/data
+/parser/outputs
+/parser/data
 tests/test.py
 *.py[cod]
 *$py.class
