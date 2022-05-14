@@ -4,90 +4,68 @@
 import csv
 import logging
 import itertools
+from tqdm import tqdm
+import more_itertools as mit
 from argparse import ArgumentParser
-from ressources.ProgressBar import printProgressBar
 
 bitmap_logger = logging.getLogger('bitmap')
 
 
 # general method to parse the $Bitmap, check for each position if 1 or 0
-def parse_bitmap(data):
+def extracting_status(data):
     res = list(itertools.chain.from_iterable([[1 if byte & 1 << n != 0 else 0 for n in range(8)] for byte in data]))
     return {n: res[n] for n in range(len(res))}
 
+# f'{path}\\{str(k)}\\$Bitmap'
+def parse_bitmap(path):
+    # bitmap_logger.info("Starting to parse the $Bitmap file")
 
-# method for parsing the bitmap attribute in the entry 0 of the $MFT, indicating the entries allocated
-# used to check if the MFT.py does its job correctly ! (doesn't forget any entry)
-def parse_bitmap_attribute(data):
-    res = list(itertools.chain.from_iterable([[1 if byte & 1 << n != 0 else 0 for n in range(8)] for byte in data]))
-    return {n: res[n] for n in range(len(res)) if res[n] == 1}
-
-
-def main(path, k):
-    with open(f'{path}\\{str(k)}\\$Bitmap', 'rb') as file:
+    with open(path, 'rb') as file:
         data = file.read()
-        bitmap = parse_bitmap(data)
-        to_csv(f'{path}\\Bitmap_{str(k)}.csv', bitmap)
+        bitmap = extracting_status(data)
 
+    # bitmap_logger.info("Process finished !")
 
-def main_attribute(path, k):
-    with open(f'{path}\\{str(k)}\\MFT_bitmap', 'rb') as file:
-        data = file.read()
-        bitmap_attribute = parse_bitmap_attribute(data)
-        bitmap_logger.info(f'There are {len(bitmap_attribute)} used entries in the MFT')
+    return bitmap
+
 
 def to_csv(path, bitmap):
     bitmap_logger.info(f"Starting writting to CSV file..")
     fieldnames = ['Cluster #', 'Status']
-    with open(path, 'w', newline='') as csv_file:
+    with open(f'{path}\\Bitmap.csv', 'w', newline='') as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         writer.writeheader()
 
         n = 1
-        for k in bitmap:
-            printProgressBar(n, len(bitmap), stage='parsing bytes [$bitmap]')
+        for k in tqdm(bitmap, desc='[Bitmap]'):
             writer.writerow({'Cluster #': k, 'Status': bitmap[k]})
             n += 1
 
     bitmap_logger.info('CSV file of the $Bitmap is written !')
 
-def log(path, k):
-    bitmap_logger.info("Starting to parse the $Bitmap file/$BITMAP attribute")
-    main_attribute(path, k)
-    main(path, k)
-    bitmap_logger.info("Process finished !")
+
+def test_algorithm(bitmap):
+    bitmap_logger.info(f"Extracting information on available free spaces")
+    free_spaces = [int(k) for k, v in tqdm(bitmap.items(), desc='[Looking for free spaces]') if v == 0]
+    bitmap_logger.info(f"Creating ranges of free space")
+    list_ranges = sorted([list(group) for group in mit.consecutive_groups(free_spaces)], key=lambda x: len(x))
+    ranges = [f"[{x[0]}{'-' + str(x[-1]) if len(x) > 1 else ''}]" for x in list_ranges]
+    bitmap_logger.info(f'List of free spaces sorted by ascending size :\n{ranges}')
 
 
 
 if __name__ == '__main__':
-    # parser = ArgumentParser(description='bitmap parser : parse bitmap and return the allocation status per cluster')
-    # parser.add_argument('-f', '--file', help='$Bitmap file', required=True)
-    # parser.add_argument('-a', '--attribute', help='$Bitmap attribute of $MFT file', action='store_true')
-    # parser.add_argument('-c', '--csv', help='save output in a csv file', required=False)
-    # parser.add_argument('-e', '--excel', help='save output in a excel sheet', required=False)
-    # args = parser.parse_args()
+    parser = ArgumentParser(description='bitmap parser : parse bitmap and return the allocation status per cluster')
+    parser.add_argument('-f', '--file', help='$Bitmap file', required=True)
+    parser.add_argument('-o', '--output', help='directory output to write the csv file + logging process', required=True)
+    args = parser.parse_args()
 
-    # logging.info("Starting to parse the $Bitmap file/$BITMAP attribute")
-    with open("C:\\Users\\celin\\UNIVERSITÉ\\MA2S1\\Cas Pratique Transversaux\\Image disque dur\\2021-10-08_08-17-14\Bitmap_MFT", 'rb') as file:
-        data = file.read()
-        bitmap = parse_bitmap(data)
-        bitmap_attribute = parse_bitmap_attribute(data)
-        print(len(bitmap_attribute))
+    logging.basicConfig(format='%(asctime)s - %(name)-12s: %(message)s',
+                        datefmt='[%d.%m.%Y %H:%M:%S]', level=logging.INFO,
+                        handlers=[logging.FileHandler(f'{args.output}\\bitmap.txt'), logging.StreamHandler()])
 
-    # if args.attribute:
-    #     logging.info(f'There are {len(bitmap_attribute)} entries used in the $MFT')
+    bitmap = parse_bitmap(args.file)
+    # to_csv(args.output, bitmap)
+    test_algorithm(bitmap)
 
-    # if args.csv:
-    #     logging.info(f"Starting writting to CSV file..")
-    #     fieldnames = ['Cluster #', 'Status']
-    #     with open(args.csv, 'w', newline='') as csv_file:
-    #         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
-    #         writer.writeheader()
-    #
-    #         n = 1
-    #         for k in bitmap:
-    #             printProgressBar(n, len(bitmap), stage='parsing bytes')
-    #             writer.writerow({'Cluster #': k, 'Status': bitmap[k]})
-    #             n += 1
-    #
-    #     logging.info('CSV file of the $Bitmap is written !')
+
