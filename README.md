@@ -1,29 +1,63 @@
-# [Ongoing project] Forensic-Tools
+# ntfs_stratigraphy
 
 ### Description
-Module suite specifically created for a master thesis on NTFS digital stratigraphy. 
 
-Forensic-tools is formed of several scripts that parse some of the major system file of NTFS ($Boot, $Bitmap and $MFT). 
+Forensic-tools is formed of several scripts that parse some of the major system file of NTFS ($Boot, $Bitmap and $MFT).
+It uses the Sleuth Kit library created by Brian Carrier (Windows version) in order to extract the system files to be parsed from 
+either an image file or a live volume.
 
-### Module MFT
-$MFT parser. 
+The use of this library is as follows - for example to extract the $MFT from a live volume named D:
 
-Arguments : 
-- f : 
-- c : 
-- j :
+     <library_path>\icat.exe \\.\D: 0 > <destination_path>\$MFT
 
-Usage : python MFT.py -f *file* 
+Note that on some volumes, the extraction has to be made on Safe Mode (otherwise the $MFT is filled with unwanted zeros). To
+parse an image file you have to specify the offset of the start of the volume (which can be found with the .\mmls.exe command).
 
-### Module bitmap
 
-Usage : 
+### Parser module
+This module contains several scripts that can be used independently (specifically the parsers) if desired.
 
-### Module boot
-The script saves a boot.txt file in the specified output directory containing the 
-information extracted from the $boot file given.
+#### MFT.py
+The MFT.py script is a MFT parser that focuses on some specific and useful attributes ($STANDARD_INFORMATION, $DATA and $FILE_NAME).
+Some attributes are not parsed for now [to be completed]. Extracted information can be saved on both json (by default) or csv format. The json format saves every information while the csv one focuses only on
+information that are useful to perform digital stratigraphy. 
 
-Usage : python .\boot.py -f *path to $boot file* -o *output directory*
+Usage :
+
+    python MFT.py -f <$MFT_file> -o <output_directory> -c 
+
+Optional arguments : 
+- c : save information in csv format. If not specified, information are saved in json format.
+- p : if specified, reconstruct file paths on the volume. Note : is really time consuming when parsing large volumes.
+
+
+
+#### bitmap.py
+The bitmap.py script is a bitmap parser 
+
+Usage :
+
+    python bitmap.py -f <$Bitmap_file> -o <output_directory> -c 
+
+Optional arguments : 
+- c : save information in csv format.
+
+#### boot.py
+The boot.py script is a boot parser that save volume information on a text format (when used with process.py). 
+Boot information can be saved independently on a csv file, if specified.
+
+Usage :
+
+    python boot.py -f <$Boot_file> -o <output_directory> -c 
+
+Optional arguments : 
+- c : save information in csv format. 
+
+
+#### process.py
+
+#### main.py
+
 
 ### Module process 
 ss

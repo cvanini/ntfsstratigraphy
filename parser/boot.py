@@ -4,6 +4,7 @@ import os
 import csv
 import struct
 import logging
+from pathlib import Path
 from argparse import ArgumentParser
 
 boot_logger = logging.getLogger('boot')
@@ -16,7 +17,7 @@ def parse_boot(filename):
         data = file.read()
 
     boot = {}
-    boot['OEM_ID'] = struct.unpack("<Q", data[3:11])[0]
+    boot['OEM_ID'] = data[3:11].decode('utf-8')
     boot['Bytes per sector'] = struct.unpack("<H", data[11:13])[0]
     boot['Sectors per cluster'] = struct.unpack("<B", data[13:14])[0]
     boot['Sectors count on volume'] = struct.unpack("<Q", data[40:48])[0]
@@ -55,6 +56,7 @@ if __name__ == '__main__':
     parser.add_argument('-c', '--csv', help='saving information to csv file', required=False, action='store_true')
 
     args = parser.parse_args()
+    args.output = Path(args.output)
 
     if not os.path.isdir(args.output):
         os.mkdir(args.output)

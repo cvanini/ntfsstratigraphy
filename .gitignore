@@ -8,6 +8,10 @@ tests/test.py
 *$py.class
 .idea/
 bitmap.txt
+parser/nsrl
+parser/temp.py
+/tests
+
 
 # C extensions
 *.so

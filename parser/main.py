@@ -1,4 +1,9 @@
-#### parse an image file
+#### Céline Vanini
+#### 02.03.2022
+
+'''parse an image file and automatically extract system files, parses them, saves the extracted info in a csv or json
+file'''
+
 import os
 import subprocess
 from MFT import *
@@ -30,16 +35,60 @@ def extract_from_image(offset, image, output):
     # command to copy the $MFT of the specified volume (entry 0)
     subprocess.run(['icat.exe', '-o', f'{offset}', '-f', 'ntfs', f'{image}', '0', '>', f"{output}\\$MFT"], cwd=sleuthkit, shell=True)
 
+########################################################################################################################
+# WORK IN PROGRESS
+# Add a hash comparison with the NSRL database to flag system files
+
+def listing_files(database, offset, image, output):
+    logger.info('Starting the flagging of system files on the volume')
+
+    logger.info('Listing files')
+    subprocess.run(['fls.exe', '-r', '-o', f'{offset}', f'{image}', '>', f"{output}\\temp_file_list.txt"],
+                   cwd=sleuthkit, shell=True)
+
+    inodes = []
+    with open(f'{output}\\temp_file_list.txt', 'r') as file:
+        data = file.readlines()
+
+        for line in data:
+            temp = line.split(': ')[0]
+            inodes.append(temp.split(' ')[-1])
+
+    with open(f'{output}\\attributes_file_list.txt', 'w') as file:
+        file.write('\n'.join([x for x in inodes]))
+
+    # subprocess.run('Get-Content', f'${output}\\temp_file_list.txt', '|', 'ForEach-Object', '{$_.split(":")[0].split(" ")[-1]}', '>', f'{output}\\file_list_inode.txt')
+
+
+def hashing(file_list, offset, image, output):
+    # TODO: problème c'est d'avoir le hash de tous les fichiers d'une image
+    # with open(f'{output}\\{file_list}', 'r') as file:
+    #     data = file.readlines()
+    #
+    #     for file in data:
+    #         subprocess.run(['icat.exe', '-o', f'{offset}', f'{image}', '>', f"{output}\\temp.txt"],
+    #                        cwd=sleuthkit, shell=True)
+    pass
+
+# TODO: include database in the parser
+def nsrl(database, offset, image, output):
+
+    pass
+    # TODO: indexer la base de données
+    # TODO: filtrer NSRL pour avoir que les OS Windows ?
+    # TODO: hfind sur la liste de fichiers, retourner genre une liste de 0 et 1 par inode ?
+    # TODO: ajouter ça au dico de la MFT dans genre le header MFT['Is a file system']
+
 
 
 if __name__ == '__main__':
     parser = ArgumentParser(description='Image file parser : extract system files and parse them to product csv files')
     parser.add_argument('-f', '--file', help='image file', required=True)
     parser.add_argument('-o', '--output', help='output directory for the created files', required=True)
+    # parser.add_argument('-n', '-nsrl', help='path to the NSRL database file', required=False)
 
     args = parser.parse_args()
 
-    print(args.output)
     if not os.path.isdir(args.output):
         os.mkdir(args.output)
 
