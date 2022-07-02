@@ -9,7 +9,7 @@ Sources : File system forensic analysis (B. Carrier, 2005) and https://flatcap.g
 import os
 import struct
 
-import logging
+from test import *
 from ressources.dict import *
 from ressources.MFT_utils import *
 from argparse import ArgumentParser
