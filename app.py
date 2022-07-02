@@ -16,7 +16,7 @@ today = datetime.now()
 # file = ".\parser\outputs\BLANC_ORDI\MFT.csv"
 # file = ".\\parser\\data\\Christopher\\MFT.csv"
 # file = "C:\\Users\\celin\\UNIVERSITÉ\\MA2S2\\Travail de Master\\Results\\11042022_1\\1617\\MFT.csv"
-file = "C:\\Users\\celin\\UNIVERSITÉ\\MA2S2\\Travail de Master\\Results\\22042022_4\\1667\\MFT.csv"
+file = "C:\\Users\\celin\\UNIVERSITE\\MA2S2\\TdM\\Results\\22042022_6\\1687\\MFT.csv"
 df = open_(Path(file))
 df = pre_processing(df)
 OS = check_OS(df)
@@ -25,7 +25,7 @@ text, df = recycle_bin(df)
 df = deletion(df)
 # df2 = df[df['Events'].notna()]
 
-boot_info = parse_boot(Path("C:\\Users\\celin\\UNIVERSITÉ\\MA2S2\\Travail de Master\\Results\\11042022_1\\0\\$Boot"))
+boot_info = parse_boot(Path("C:\\Users\\celin\\UNIVERSITE\\MA2S2\\TdM\\Results\\11042022_1\\0\\$Boot"))
 # boot_info = parse_boot(".\parser\outputs\BLANC_ORDI\$Boot")
 boot_info = [{'Information': k, 'Value': v} for k, v in boot_info.items()]
 columns = ['SI creation time', 'SI modification time', 'SI last accessed time', 'SI entry modification time',
@@ -97,6 +97,7 @@ MFT_cluster.update_yaxes(
     range=[-1, df['Entry number'].iloc[-1] + 10],
 )
 
+#MFT_cluster.to_image(format='svg', engine='orca')
 
 # First page
 # ----------------------------------------------------------------------------------------------------------------------

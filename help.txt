@@ -1,0 +1,47 @@
+Bienvenue dans Forensic-Tools ou ntfs_stratigraphy ! 
+(Il aura souvent changé de noms..)
+
+Voici un petit helper permettant de comprendre la structure du projet. 
+
+
+###########################################################################################################
+
+Le répertoire 'parser' contient les modules principaux - les 3 parsers de fichiers système. Ils sont tous
+3 utilisables de façon indépendante (mais nécessite d'avoir déjà extrait les fichiers en questions), 
+n'hésitez pas à jouer avec le --help de chaque script, bien que ce ne soit pas très sorcier en termes 
+d'arguments à spécifier.
+
+	- bitmap.py : $Bitmap
+	- MFT.py : $MFT
+	- boot.py : $Boot
+	- process.py : pour simuler les actions utilisateur. L'exécution se fait depuis une console 
+		       PowerShell avec les droits d'administrateur !
+	- main.py : automatise l'extraction/parsing/traitement (et plus?) de ces fichiers à partir d'une
+		    image forensique donnée en paramètre.
+
+Le répertoire contient également ce qui est nécessaire de la librairie sleuthkit. Dans sleuthkit/bin, il
+est possible de retrouver les formes exécutables des commandes de TSK. 
+https://www.sleuthkit.org/sleuthkit/download.php
+
+Sans grande surprise, le sous-dossier nsrl contient la base de données NSRL téléchargée depuis :
+https://www.nist.gov/itl/ssd/software-quality-group/national-software-reference-library-nsrl/nsrl-download
+
+
+
+###########################################################################################################
+
+Le répertoire 'treatments' contient divers notebook ayant été utilisés pour observer les traces
+(en plus des .twb) et créer les graphes retrouvés dans le LaTeX. 
+
+!! Note importante !!
+Si vous souhaitez run ces notebook, il faut faire attention à la méthode utilisée pour
+enregistrer les graphes au format .pdf (write_image) qui utilise une librairie Javascript (plotly.js). 
+Il y a peut être possibilité qu'il faille la retélécharger (https://github.com/plotly/plotly.js) si 
+elle produit une erreur type (--plotly.js wrong URL or file path) ou faire attention à ce que le projet ou
+les notebook se situent dans un chemin ne contenant ni accents, ni espaces (allez savoir pourquoi).
+
+Avec cela ça devrait correctement marcher.
+
+###########################################################################################################
+
+app.py : pour un peu de fun.

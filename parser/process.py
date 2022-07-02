@@ -7,6 +7,8 @@
 
 import os
 import time
+
+import bitmap
 from parser.bitmap import *
 from parser.boot import *
 from parser.MFT import *
@@ -14,7 +16,7 @@ import random
 import shutil
 import logging
 import subprocess
-from parser.ressources.MFT_utils import *
+from ressources.MFT_utils import *
 from datetime import datetime, timedelta
 from argparse import ArgumentParser
 
@@ -29,38 +31,37 @@ def extract_from_volume(volume, stage, n):
     os.mkdir(path)
 
     # Extracting and parsing the $boot to obtain volume information
-    # if n == 0:
-    #     subprocess.run(['icat.exe', f'\\\\.\\{volume}', '7', '>', f"{path}\\$Boot"], cwd=f'{curr}\\sleuthkit\\bin\\',
-    #                    shell=True)
-    #     parse_boot(f'{path}\\$Boot')
+    if n == 0:
+        subprocess.run(['icat.exe', f'\\\\.\\{volume}', '7', '>', f"{path}\\$Boot"], cwd=f'{curr}\\sleuthkit\\bin\\',
+                       shell=True)
+        parse_boot(f'{path}\\$Boot')
     # Parsing the $BITMAP attribute in the entry 0 of the $MFT (used for the MFT file itself..)
     # It contains the number of entries that are used in the $MFT, so can be compared with the result of the
     # MTF.py script, to be sure it parsed all entries.
-    # subprocess.run(['icat.exe', f'\\\\.\\{volume}', '0-176', '>', f"{path}\\MFT_bitmap"],
-    #                cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
-    # # command to copy the $Bitmap of the specified volume (entry 6)
-    # subprocess.run(['icat.exe', f'\\\\.\\{volume}', '6', '>', f"{path}\\$Bitmap"], cwd=f'{curr}\\sleuthkit\\bin\\',
-    #                shell=True)
+    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '0-176', '>', f"{path}\\MFT_bitmap"],
+                   cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
+    # command to copy the $Bitmap of the specified volume (entry 6)
+    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '6', '>', f"{path}\\$Bitmap"], cwd=f'{curr}\\sleuthkit\\bin\\',
+                   shell=True)
     # command to copy the $MFT of the specified volume (entry 0)
-    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '0', '>', f"{path}\\$MFT"], cwd=f'{curr}\\parser\\sleuthkit\\bin\\',
+    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '0', '>', f"{path}\\$MFT"], cwd=f'{curr}\\sleuthkit\\bin\\',
                    shell=True)
 
     return path
 
 
 def parse_all(path):
-    # bitmap_dict = bitmap.parse_bitmap(f'{path}\\$Bitmap')
-    # bitmap.to_csv(path, bitmap_dict)
-    ##len = parse_bitmap_MFT(f'{path}\\$MFT')
+    # bitmap_dict = parse_bitmap(f'{path}\\$Bitmap')
+    # bitmap_to_csv(path, bitmap_dict)
+    # len = parse_bitmap_MFT(path)
     MFT_dict = parse_MFT(f'{path}\\$MFT')
-
-    #logger.info(f'There are {len} used entries in the MFT bitmap attribute')
-    #if len == len(MFT_dict):
-    #    logger.info(f'All entries were extracted during the process')
-    #else:
-    #    logger.info(f'Check the script, errors might have occured')
-    MFT_to_csv(f"{path}", MFT_dict)
-
+    #
+    # logger.info(f'There are {len} used entries in the MFT bitmap attribute')
+    # if len == len(MFT_dict):
+    #     logger.info(f'All entries were extracted during the process')
+    # else:
+    #     logger.info(f'Check the script, errors might have occured')
+    MFT_to_csv(path, MFT_dict)
 
 
 # def extract_USN_logfile(volume, stage):
@@ -83,10 +84,10 @@ def create(path, size):
 
 
 def delete(path, k):
-    # subprocess.run(["del", f"{path}\\{str(k-random.randint(1,k))}.txt"], shell=True)
+    # subprocess.run(["del", f"{path}\\{str(k-5)}.txt"], shell=True)
     try:
-        if os.path.exists(f"{path}\\{k-random.randint(1, k-1)}.txt"):
-            os.remove(f"{path}\\{k-random.randint(1, k-1)}.txt")
+        if os.path.exists(f"{path}\\{k - random.randint(1, k - 1)}.txt"):
+            os.remove(f"{path}\\{k - random.randint(1, k - 1)}.txt")
     except Exception:
         pass
 
@@ -103,12 +104,12 @@ def backdating(path):
         subprocess.run([f"$(Get-Item {path}\\{file}).lastaccesstime=$(Get-Date \"{d}\")"], shell=True)
         subprocess.run([f"$(Get-Item {path}\\{file}).lastwritetime=$(Get-Date \"{d}\")"], shell=True)
 
-#
-# def algorithm(volume, path):
-#     subprocess.run(['icat.exe', f'\\\\.\\{volume}', '6', '>', f"{path}\\$Bitmap"], cwd=f'{curr}\\sleuthkit\\bin\\',
-#                    shell=True)
-#     b = parse_bitmap(f"{path}\\$Bitmap")
-#     test_algorithm(b)
+
+def algorithm(volume, path):
+    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '6', '>', f"{path}\\$Bitmap"], cwd=f'{curr}\\sleuthkit\\bin\\',
+                   shell=True)
+    b = parse_bitmap(f"{path}\\$Bitmap")
+    test_algorithm(b)
 
 
 if __name__ == '__main__':
@@ -139,9 +140,8 @@ if __name__ == '__main__':
 
     total, used, free = shutil.disk_usage(args.volume)
     logger.info(f'The volume has a capacity of {total} bytes')
-    # extract_from_volume(args.volume, args.stage, 0)
-    # algorithm(args.volume, f'{curr}\\data\\{args.stage}')
-
+    # extract(args.volume, args.stage, 0)
+    algorithm(args.volume, f'{curr}\\data\\{args.stage}')
     logger.info("Creating files..")
 
     n = 1
@@ -149,8 +149,6 @@ if __name__ == '__main__':
     parse_all(p)
 
     while True:
-        # To have the disk not full
-        # while n < 800:
         try:
             # creating files directly from the command line :
             # subprocess.run(["fsutil", "file", "createnew", f"{args.volume}\\{str(n)}.txt", f"{args.size}"])
@@ -158,44 +156,30 @@ if __name__ == '__main__':
                 # fixed file size
                 create(f'{args.volume}\\{str(n)}', args.size)
             else:
-                # random file size
-                random_size = random.randint(100, 1024 * 1024 * 50)
+                # random file size : 10 bytes to 10 Mb
+                random_size = random.randint(100, 10 * 1024 * 1024)
                 create(f'{args.volume}\\{str(n)}', random_size)
-                # to create files with random names (test if there is a difference with because of the B+-Tree)
-                # random_string = ''.join(random.choice(string.ascii_lowercase) for i in range(1,6))
-                # create(args.volume + '\\' + str(random_string), random_size)
-
 
             n += 1
-            #time.sleep(random.uniform(0.5, 5))
-            time.sleep(2)
-            # to extract the system files at some stage of the process
-            # for i in range(1, total, 100):
-            #     if i == n:
-            #         logger.info(f"File #{n} was just created!")
-            #         p = extract_from_volume(args.volume, args.stage, n)
-            #         parse_all(p)
+            time.sleep(random.uniform(0.5, 1.5))
 
             # for i in range(1, total, 100):
             #     if i == n:
             #         logger.info(f"File #{n} was just created !")
             #         p = extract(args.volume, args.stage, n)
             #         parse_all(p)
-            # logger.info(f'File {n} created size: {random_size // 4096}')
+            logger.info(f'File {n} created size: {random_size // 4096}')
+            for j in range(50, total, 100):
+                if j == n:
+                    # extract(args.volume, args.stage, n)
+                    delete(args.volume, n)
+                    logger.info(f"File {n} was deleted")
 
+            algorithm(args.volume, f'{curr}\\data\\{args.stage}')
 
             # if args.backdating:
             #    if n == args.backdating:
             #        backdating(f'{args.volume}')
-
-            # to test the algorithm
-            # logger.info(f'File {n} created size : {random_size/4096}')
-            # for j in range(50, total, 100):
-            #     if j == n:
-            #         delete(args.volume, n)
-            #         logger.info(f"File {n} was deleted")
-
-            # algorithm(args.volume, f'{curr}\\data\\{args.stage}')
 
 
         # Escaping the loop when an OS memory error is catched
@@ -204,7 +188,7 @@ if __name__ == '__main__':
             break
 
     logger.info('Extracting $Bitmap and $MFT at final stage..!')
-    p = extract_from_volume(args.volume, args.stage, n)
+    p = extract(args.volume, args.stage, n)
     parse_all(p)
     # extract_USN_logfile(args.volume, args.stage)
 
