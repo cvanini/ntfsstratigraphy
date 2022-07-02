@@ -7,18 +7,19 @@
 
 import os
 import time
-from parser.bitmap import *
-from parser.boot import *
-from parser.MFT import *
+from MFT import *
+from bitmap import *
+from boot import *
 import random
 import shutil
 import logging
 import subprocess
-from parser.ressources.MFT_utils import *
+from ressources.MFT_utils import *
 from datetime import datetime, timedelta
 from argparse import ArgumentParser
 
 logger = logging.getLogger('process')
+curr = os.getcwd()
 
 
 def extract_from_volume(volume, stage, n):
@@ -29,20 +30,20 @@ def extract_from_volume(volume, stage, n):
     os.mkdir(path)
 
     # Extracting and parsing the $boot to obtain volume information
-    # if n == 0:
-    #     subprocess.run(['icat.exe', f'\\\\.\\{volume}', '7', '>', f"{path}\\$Boot"], cwd=f'{curr}\\sleuthkit\\bin\\',
-    #                    shell=True)
-    #     parse_boot(f'{path}\\$Boot')
+    if n == 0:
+        subprocess.run(['icat.exe', f'\\\\.\\{volume}', '7', '>', f"{path}\\$Boot"], cwd=f'{curr}\\sleuthkit\\bin\\',
+                       shell=True)
+        parse_boot(f'{path}\\$Boot')
     # Parsing the $BITMAP attribute in the entry 0 of the $MFT (used for the MFT file itself..)
     # It contains the number of entries that are used in the $MFT, so can be compared with the result of the
     # MTF.py script, to be sure it parsed all entries.
-    # subprocess.run(['icat.exe', f'\\\\.\\{volume}', '0-176', '>', f"{path}\\MFT_bitmap"],
-    #                cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
-    # # command to copy the $Bitmap of the specified volume (entry 6)
-    # subprocess.run(['icat.exe', f'\\\\.\\{volume}', '6', '>', f"{path}\\$Bitmap"], cwd=f'{curr}\\sleuthkit\\bin\\',
-    #                shell=True)
+    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '0-176', '>', f"{path}\\MFT_bitmap"],
+                   cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
+    # command to copy the $Bitmap of the specified volume (entry 6)
+    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '6', '>', f"{path}\\$Bitmap"], cwd=f'{curr}\\sleuthkit\\bin\\',
+                   shell=True)
     # command to copy the $MFT of the specified volume (entry 0)
-    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '0', '>', f"{path}\\$MFT"], cwd=f'{curr}\\parser\\sleuthkit\\bin\\',
+    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '0', '>', f"{path}\\$MFT"], cwd=f'{curr}\\sleuthkit\\bin\\',
                    shell=True)
 
     return path
@@ -63,12 +64,20 @@ def parse_all(path):
 
 
 
-# def extract_USN_logfile(volume, stage):
-#     curr = os.getcwd()
-#     subprocess.run(['icat.exe', f'\\\\.\\{volume}', '11', '>', f"{curr}\\data\\{stage}\\USN_journal"],
-#                    cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
-#     subprocess.run(['icat.exe', f'\\\\.\\{volume}', '2', '>', f"{curr}\\data\\{stage}\\$LogFile"],
-#                    cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
+def extract_USN_logfile(volume, stage):
+    # pas aussi simple que ça pour l'USN, pas toujours le même numéro d'entrée:
+    logger.info(f"Extracting the $UsnJrnl")
+    subprocess.run(['fls.exe', f'\\\\.\\{volume}', '11'],
+                   cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
+    input = input("Please write the attribute number containing the $J: ")
+    subprocess.run(['icat.exe', f'\\\\.\\{volume}', input, '>', f"{curr}\\data\\{stage}\\$J"],
+                   cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
+    logger.info(f"Extracting the $LogFile")
+    subprocess.run(['icat.exe', f'\\\\.\\{volume}', '2', '>', f"{curr}\\data\\{stage}\\$LogFile"],
+                   cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
+
+def parse_usn(stage):
+    subprocess.run(['python', 'usn.py', '--csv', '-f', f'{curr}\\data\\{stage}\\$J', '-o', f'{curr}\\data\\{stage}\\usn.csv'], cwd=f'{curr}\\usn_parser\\', shell=True)
 
 
 # create files of the specified size, in bytes.
@@ -84,9 +93,11 @@ def create(path, size):
 
 def delete(path, k):
     # subprocess.run(["del", f"{path}\\{str(k-random.randint(1,k))}.txt"], shell=True)
+    k = int(k)
     try:
-        if os.path.exists(f"{path}\\{k-random.randint(1, k-1)}.txt"):
-            os.remove(f"{path}\\{k-random.randint(1, k-1)}.txt")
+        rand = random.randint(1, k-1)
+        if os.path.exists(f"{path}\\{rand}.txt"):
+            os.remove(f"{path}\\{rand}.txt")
     except Exception:
         pass
 
@@ -112,7 +123,6 @@ def backdating(path):
 
 
 if __name__ == '__main__':
-    # TODO: add image file support (create main.py?)
     parser = ArgumentParser()
     parser.add_argument('-s', '--size',
                         help='Size of the file to be created (in bytes), if not specified, creates files of random size',
@@ -159,16 +169,20 @@ if __name__ == '__main__':
                 create(f'{args.volume}\\{str(n)}', args.size)
             else:
                 # random file size
-                random_size = random.randint(100, 1024 * 1024 * 50)
+                random_size = random.randint(100, 1024 * 1024 * 10)
                 create(f'{args.volume}\\{str(n)}', random_size)
                 # to create files with random names (test if there is a difference with because of the B+-Tree)
                 # random_string = ''.join(random.choice(string.ascii_lowercase) for i in range(1,6))
                 # create(args.volume + '\\' + str(random_string), random_size)
 
+            for i in range(10, total, 40):
+                if i == n:
+                    logger.info("Deleting a file")
+                    delete(args.volume, n)
 
             n += 1
-            #time.sleep(random.uniform(0.5, 5))
-            time.sleep(2)
+            time.sleep(random.uniform(0.5, 2))
+            # time.sleep(2)
             # to extract the system files at some stage of the process
             # for i in range(1, total, 100):
             #     if i == n:
@@ -206,6 +220,6 @@ if __name__ == '__main__':
     logger.info('Extracting $Bitmap and $MFT at final stage..!')
     p = extract_from_volume(args.volume, args.stage, n)
     parse_all(p)
-    # extract_USN_logfile(args.volume, args.stage)
+    extract_USN_logfile(args.volume, args.stage)
 
     logger.info('Process finished !')
