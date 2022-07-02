@@ -340,17 +340,17 @@ def parse_volume_name(volume_name, raw_record, next_offset):
     record = raw_record[next_offset:]
     volume_name['Attribute first offset'] = next_offset
     parse_attribute_header(record, volume_name)
-    # volume_name['Volume name'] = record[volume_name['Attribute header size']:volume_name['Attribute size']]
-    # if volume_name['Volume name'] == b'':
-    #     volume_name['Volume name'] == None
-    # else:
-    #     while True:
-    #         if volume_name['Volume name'].endswith(b'\x00\x00'):
-    #             volume_name['Volume name'] = volume_name['Volume name'][:-2]
-    #         else:
-    #             break
-    #     volume_name['Volume name'] = volume_name['Volume name'].decode('utf-16')
-    #
+    volume_name['Volume name'] = record[volume_name['Attribute header size']:volume_name['Attribute size']]
+    if volume_name['Volume name'] == b'':
+        volume_name['Volume name'] is None
+    else:
+        while True:
+            if volume_name['Volume name'].endswith(b'\x00\x00'):
+                volume_name['Volume name'] = volume_name['Volume name'][:-2]
+            else:
+                break
+        volume_name['Volume name'] = volume_name['Volume name'].decode('utf-16')
+
 
     next = volume_name['Attribute size entry'] + volume_name['Attribute first offset']
 
@@ -400,7 +400,8 @@ def run_list(first_off, record):
 
         nb_cluster = int.from_bytes(record[first_off:first_off + right], 'little')
         pos_cluster = int.from_bytes(record[first_off + right:first_off + length], 'little', signed=True)
-        # handling sparse/compressed files which have pos_cluster = 0 -> they are not fragmented files
+        # handling sparse files which have pos_cluster = 0 -> they are not fragmented files
+        # TODO: what about compressed files?
         if pos_cluster == 0:
             run_list.append((pos_cluster, nb_cluster))
         else:
@@ -459,16 +460,20 @@ def parse_index_root(index_root, raw_record, next_offset):
     index_root['Attribute type ID'] = struct.unpack('<I', record[0:4])[0]
     index_root['Type'] = attributes_ID[index_root['Attribute type ID']]
     index_root['Collation rule'] = struct.unpack('<I', record[4:8])[0]
-    index_root['Index entry size'] = struct.unpack('<I', record[8:12])[0]
+    index_root['Index record size (bytes)'] = struct.unpack('<I', record[8:12])[0]
     # Number of clusters or logarithm of the size (given in the boot sector)
-    index_root['Cluster per index record'] = struct.unpack('<B', record[12:13])[0]
+    index_root['Index record size (clusters)'] = struct.unpack('<B', record[12:13])[0]
+
+    # parsing the node header
     index_root.update(parse_index_node_header(index_node, record[16:]))
 
-    # Parses only directory indexes for now
+    # Parses only directory indexes entries for now
     if index_root['Type'] == '$FILE_NAME':
         match index_root['Index flag']:
             case 0:
                 index_root.update(parse_index_entry(index_entry, index_root, record[32:]))
+            # index entries are in the $INDEX_ALLOCATION attribute
+            # possible to have entries in INDEX_ROOT if Flag = 1 ?
             case 1:
                 pass
             case _:
@@ -485,7 +490,9 @@ def parse_index_root(index_root, raw_record, next_offset):
 def parse_index_node_header(index_node, record):
     index_node.clear()
 
+    # offset are related to the start of the node header
     index_node['Offset for 1st entry (starting node header)'] = struct.unpack('<I', record[0:4])[0]
+    # Offset to end of used poron of index entry list, which is relave to start of node header
     index_node['Index entry total size'] = struct.unpack('<I', record[4:8])[0]
     index_node['Index entry allocated size'] = struct.unpack('<I', record[8:12])[0]
     index_node['Index flag'] = struct.unpack('<B', record[12:13])[0]
@@ -509,15 +516,21 @@ def parse_index_entry(index_entry, index, record):
     # The stream is a copy of the filename content in the MFT entry of the indexed file/sub-directory
     index['Filenames in directory'] = []
 
+    # -16 to remove the node header
     length_stream = index['Index entry allocated size'] - 16
 
-    match index['Index flag']:
-        case 0:
+    # match index['Index flag']:
+        # case 0:
+
+    match index['Type']:
+        case '$FILE_NAME':
             while length_stream > 0:
                 try:
-                    # The file reference is on 8 bytes : 6 for the MFT entry number and the last 2 for the sequence number
+                    # The file reference is on 8 bytes : 6 for the MFT entry number and the last 2 for the sequence
+                    # number
                     index_entry['MFT file reference'] = (unpack6(record[0:6]), struct.unpack('<H', record[6:8]))
                     index_entry['Length of entry'] = struct.unpack('<H', record[8:10])[0]
+                    # stream can be e.g. $FILE_NAME structure
                     index_entry['Length of stream'] = struct.unpack('<H', record[10:12])[0]
                     index_entry['Index entry flag'] = struct.unpack('<I', record[12:16])[0]
 
@@ -541,21 +554,24 @@ def parse_index_entry(index_entry, index, record):
                             index_entry['Index entry flag (verbose)'] = 'Child nodes exist'
                             entry = record[:index_entry['Length of entry']]
                             index_entry['VCN of child nodes'] = entry[:-8]
+                        # if the 'last entry' flag is set, we break the loop
                         case 2:
                             index_entry['Index entry flag (verbose)'] = 'Last entry in list'
                             break
                         case 3:
-                            # TODO: gérer les child nodes ?
+                            # TODO: gérer les child nodes ? Pas trop utile de reconstuire le B-Tree pour la stratigraphie
                             index_entry['Index entry flag (verbose)'] = ['Child nodes exists', 'Last entry in list']
                             break
                         case _:
                             pass  # index_entry['Index entry flag'])
 
-                except Exception:
+                except Exception as e:
+                    print(f'Somewhat this error occurred: {e}')
                     break
-
-        case 1:
+        case _:
             pass
+        #case 1:
+        #    pass
 
     return index
 
@@ -781,7 +797,7 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--output', help='output directory for the created files', required=True)
     parser.add_argument('-c', '--csv', help='output MFT content into a csv file', required=False, action='store_true')
     parser.add_argument('-j', '--json', help='output MFT content into a csv json', required=False, action='store_true')
-    parser.add_argument('-p', '--path', help='If specified, will reconstruct the path in the file system for each file', required=False)
+    parser.add_argument('-p', '--path', help='If specified, will reconstruct the path in the file system for each file', required=False, action='store_true')
 
     args = parser.parse_args()
     args.output = Path(args.output)
