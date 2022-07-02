@@ -6,12 +6,12 @@ __pycache__/
 tests/test.py
 *.py[cod]
 *$py.class
-data
 .idea/
 bitmap.txt
 parser/nsrl
 parser/temp.py
 /tests
+/treatments
 
 
 # C extensions

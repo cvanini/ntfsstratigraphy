@@ -542,7 +542,7 @@ def parse_index_entry(index_entry, index, record):
                             # The attribute contains a list of some of the childs that are present in the directory
                             # Each entry has a VCN and filename, telling NTFS that "at this VCN, I have all files starting
                             # after this letter, until next VCN"
-                            index['Filenames in directory'].append(filename)
+                            index['Filenames in directory'].append((filename, index_entry['MFT file reference']))
                     record = record[index_entry['Length of entry']:]
 
                     length_stream = length_stream - index_entry['Length of entry']

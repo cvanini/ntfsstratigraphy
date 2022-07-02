@@ -18,13 +18,13 @@ def extracting_status(data):
 
 # f'{path}\\{str(k)}\\$Bitmap'
 def parse_bitmap(path):
-    # bitmap_logger.info("Starting to parse the $Bitmap file")
+    bitmap_logger.info("Starting to parse the $Bitmap file")
 
     with open(path, 'rb') as file:
         data = file.read()
         bitmap = extracting_status(data)
 
-    # bitmap_logger.info("Process finished !")
+    bitmap_logger.info("Process finished !")
 
     return bitmap
 
