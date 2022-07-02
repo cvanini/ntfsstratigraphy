@@ -58,10 +58,12 @@ if __name__ == '__main__':
     parser = ArgumentParser(description='bitmap parser : parse bitmap and return the allocation status per cluster')
     parser.add_argument('-f', '--file', help='$Bitmap file', required=True)
     parser.add_argument('-o', '--output', help='directory output to write the csv file + logging process', required=True)
+
     args = parser.parse_args()
 
     if not os.path.isdir(args.output):
         os.mkdir(args.output)
+
 
     logging.basicConfig(format='%(asctime)s - %(name)-12s: %(message)s',
                         datefmt='[%d.%m.%Y %H:%M:%S]', level=logging.INFO,

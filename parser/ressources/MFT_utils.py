@@ -1,6 +1,6 @@
 #### Céline Vanini
+#### 02.03.2022
 
-'''accessory functions for conversion'''
 import copy
 import csv
 import json
@@ -16,14 +16,25 @@ MFT_logger = logging.getLogger('MFT')
 
 
 # Convert the Windows FILETIME timestamps to readable timestamps (UTC) (format : 01.01.1970 00:00:00 + 0000)
+# Timestamps in entries are expressed in UTC (https://www.sciencedirect.com/topics/computer-science/master-file-table)
 def convert_filetime(date_to_convert: int):
-    delta = timedelta(microseconds=date_to_convert / 10)
-    win_date = datetime(1601, 1, 1, 0, 0, 0)
-    timestamp = win_date + delta
-    timestamp = timestamp
+    try :
+        delta = timedelta(microseconds=date_to_convert / 10)
+        win_date = datetime(1601, 1, 1, 0, 0, 0)
+        timestamp = win_date + delta
 
-    return f'{datetime.strftime(timestamp, "%d.%m.%Y %H:%M:%S %z")}'
+        # change to the timezone of the machine, to be defined if not relevant
+        # in a try to convert incorrect timestamps to None (e.g 18.09.1616)
+        # timestamp = timestamp.astimezone()
 
+        if timestamp.year > 1970:
+            return f'{datetime.strftime(timestamp, "%d.%m.%Y %H:%M:%S %z")}'
+        else:
+            return None
+    except Exception:
+        print(delta, win_date)
+        return None
+        pass
 
 # method for parsing the bitmap attribute in the entry 0 of the $MFT, indicating the entries allocated
 # used to check if the MFT.py does its job correctly ! (doesn't forget any entry)
@@ -52,10 +63,11 @@ def MFT_to_csv(dir, MFT):
                   'SI entry modification time', 'SI last accessed time', 'File type', 'USN', 'FN creation time',
                   'FN modification time', 'FN entry modification time', 'FN last accessed time', 'Parent entry number',
                   'Filename', 'Filename2', 'Run list', 'First cluster', 'Resident', 'ADS Run list', 'ADS first cluster',
-                  'ADS resident', 'Index flag', 'Index Run list', 'Index first cluster']
+                  'ADS resident', 'Index flag', 'Index Run list', 'Index first cluster', 'Volume name', 'NTFS version']
 
     with open(f'{dir}\\MFT.csv', 'w', newline='', encoding='utf-8') as outfile_csv:
-        writer = csv.DictWriter(outfile_csv, fieldnames=fieldnames)
+        writer = csv.DictWriter(outfile_csv, fieldnames=fieldnames, delimiter=',')
+
 
         writer.writeheader()
         for entry, value in tqdm(MFT.items(), desc='[csv]'):
@@ -97,18 +109,6 @@ def MFT_to_csv(dir, MFT):
                         pass
             except Exception:
                 print(str(entry) + '\n' + str(value))
-                # if count == 1:
-                #     fn['Filename'] = value['$FILE_NAME']['Filename']
-                #     fn['Filename2'] = ''
-                # elif count == 2:
-                #     fn['Filename'] = value['$FILE_NAME2']['Filename']
-                #     fn['Filename2'] = value['$FILE_NAME']['Filename']
-                # else:
-                #     fn['Filename'] = value['$FILE_NAME2']['Filename']
-                #     fn['Filename2'] = []
-                #     fn['Filename2'].append(value['$FILE_NAME']['Filename'])
-                #     for i in range(3, count+1):
-                #         fn['Filename2'].append(value[f'$FILE_NAME{i}']['Filename'])
 
             if '$DATA' in value:
                 if 'Run list' in value['$DATA']:
@@ -144,6 +144,21 @@ def MFT_to_csv(dir, MFT):
             else:
                 all = {'Index Run list': '', 'Index first cluster': ''}
 
+            if '$VOLUME_NAME' in value:
+                v_name = {'Volume name': value['$VOLUME_NAME']['Volume name']}
+            else:
+                v_name = {'Volume name': ''}
+
+            if '$VOLUME_INFORMATION' in value:
+                v_info = {'NTFS version': value['$VOLUME_INFORMATION']['NTFS version']}
+            else:
+                v_info = {'NTFS version': ''}
+
+            if 'Path' in value['header']:
+                path = value['header']['Path']
+            else:
+                path = ''
+
             writer.writerow(dict({'ID': entry,
                                   'Sequence number': value['header']['Sequence number'],
                                   'FILE/BAAD': value['header']['FILE/BAAD'],
@@ -155,24 +170,9 @@ def MFT_to_csv(dir, MFT):
                                   'Base record entry number': value['header']['Base record entry number'],
                                   'Base record sequence number': value['header']['Base record sequence number'],
                                   'Entry number': value['header']['Entry number'],
-                                  'Path': value['header']['Path'], **si, **fn, **d, **ads, **ind, **all}))
+                                  'Path': path, **si, **fn, **d, **ads, **ind, **all, **v_name, **v_info}))
 
         MFT_logger.info(f'CSV file of the $MFT is written !')
-
-
-# def MFT_dict(MFT):
-#     MFT_ = copy.deepcopy(MFT)
-#     header_keys = ['Entry number', 'Sequence number', 'Hard link count', '$LogFile sequence number (LSN)',
-#                    'Base record reference', 'Path']
-#
-#     MFT_processed = {}
-#     for k, v in MFT_.items():
-#         MFT_processed[k] = {
-#             'Entry number' : v['header']
-#         }
-#     # data : resident
-#
-#     return MFT_processed
 
 
 # This function is used to extract information on bits, typically attribute flags

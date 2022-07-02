@@ -1,22 +1,17 @@
 #### Céline Vanini
-#### 02.03.2021
+#### 02.03.2022
 
-'''MFT parser : extract the entries attributes informations based on offset values.
+'''MFT parser : extracts the entries attributes' information based on offset values.
 Principal attributes that can be recovered are $STANDARD_INFORMATION, $FILE_NAME and $DATA.
-For the other attributes, only the header is parsed (rest of info not necessary in this context).
-Will be managed afterwards.
-
+Only the EA attributes are not considered during the parsing (only the header is parsed)
 Sources : File system forensic analysis (B. Carrier, 2005) and https://flatcap.github.io/linux-ntfs/ntfs/attributes/index.html
 '''
-import sys
 import os
-import copy
 import struct
+
 import logging
-from tqdm import tqdm
-from parser.ressources.dict import *
-from parser.ressources.MFT_utils import *
-from parser.ressources.plot import *
+from ressources.dict import *
+from ressources.MFT_utils import *
 from argparse import ArgumentParser
 
 MFT_RECORD_SIZE = 1024
@@ -33,19 +28,21 @@ MFT_record = {
 }
 
 
-# TODO: gérer les BAAD
+# TODO: handle BAAD entries
 def parse_header(header, raw_record):
     header.clear()
     if raw_record[:4] == b'\x42\x41\x41\44':
-        print('bloup')
+        header['FILE/BAAD'] = raw_record[:4].decode('utf-8')
+        print('Woops, a BAAD entry was detected')
     if raw_record[:4] == b'\x00\x00\x00\x00':
         return None
     if raw_record[:4] != b'\x46\x49\x4C\x45':
-        raise Exception("This is not the start of a MFT entry")
+        raise Exception("This is not the start of an MFT entry")
 
     header['FILE/BAAD'] = raw_record[:4].decode('utf-8')
-    # header['Offset to update sequence'] = struct.unpack("<H", raw_record[4:6])[0]
-    # Used by the file system log:
+    header['Offset to fixup array'] = struct.unpack("<H", raw_record[4:6])[0]
+    header['Number of entries in fixup array'] = struct.unpack("<H", raw_record[6:8])[0]
+    # Used by the file system $LogFile:
     header['$LogFile sequence number (LSN)'] = struct.unpack("<Q", raw_record[8:16])[0]
     # increments when the corresponding file is deleted
     header['Sequence number'] = struct.unpack("<H", raw_record[16:18])[0]
@@ -56,21 +53,22 @@ def parse_header(header, raw_record):
     header['First attribute offset'] = struct.unpack("<H", raw_record[20:22])[0]
     # Status of the file
     header['Allocation flag'] = struct.unpack("<H", raw_record[22:24])[0]
+
     match header['Allocation flag']:
         case 0:
-            header['Allocation flag (verbose)'] = '00 (Deleted file)'
+            header['Allocation flag (verbose)'] = 'Deleted file'
         case 1:
-            header['Allocation flag (verbose)'] = '01 (Visible file)'
+            header['Allocation flag (verbose)'] = 'Visible file'
         case 2:
-            header['Allocation flag (verbose)'] = '02 (Deleted directory)'
+            header['Allocation flag (verbose)'] = 'Deleted directory'
         case 3:
-            header['Allocation flag (verbose)'] = '03 (Visible directory)'
+            header['Allocation flag (verbose)'] = 'Visible directory'
         case 4:
-            header['Allocation flag (verbose)'] = '04 (Extension)'
+            header['Allocation flag (verbose)'] = 'Extension'
         case 8:
-            header['Allocation flag (verbose)'] = '08 (Special index)'
+            header['Allocation flag (verbose)'] = 'Special index'
         case _:
-            header['Allocation flag (verbose)'] = 'Unknown allocation flag'
+            header['Allocation flag (verbose)'] = 'Unknown'
 
     header['Entry logical size'] = struct.unpack("<I", raw_record[24:28])[0]
     header['Entry physical size'] = struct.unpack("<I", raw_record[28:32])[0]
@@ -288,7 +286,8 @@ def parse_filename(filename, raw_record, next_offset):
 
 ########################## $OBJECT_ID ATTRIBUTE ########################################################################
 
-# Not used
+# A file can be addressed using its object ID (a file can be renamed but still be found). The $Extend\$ObjId has an index
+# named $O that correlates a files object ID to its MFT entry.
 def parse_objectid(object_id, raw_record, next_offset):
     object_id.clear()
 
@@ -298,6 +297,13 @@ def parse_objectid(object_id, raw_record, next_offset):
     record = raw_record[next_offset:]
     object_id['Attribute first offset'] = next_offset
     parse_attribute_header(record, object_id)
+    content_offset = object_id['Attribute content start']
+
+    record = record[content_offset:]
+    # object_id['Offset to file information'] = struct.unpack('<H', record[0:2])[0]
+    # object_id['Size of file information'] = struct.unpack('<H', record[2:4])[0]
+    # object_id['']
+
 
     next = object_id['Attribute size entry'] + object_id['Attribute first offset']
 
@@ -324,7 +330,7 @@ def parse_security_descriptor(security_descriptor, raw_record, next_offset):
 
 ########################## $SVOLUME_NAME ATTRIBUTE #####################################################################
 
-# Not used
+# This attribute has a minimum of 2 bytes and max of 256 bytes (127 unicode characters).
 def parse_volume_name(volume_name, raw_record, next_offset):
     volume_name.clear()
 
@@ -334,6 +340,18 @@ def parse_volume_name(volume_name, raw_record, next_offset):
     record = raw_record[next_offset:]
     volume_name['Attribute first offset'] = next_offset
     parse_attribute_header(record, volume_name)
+    volume_name['Volume name'] = record[volume_name['Attribute header size']:volume_name['Attribute size']]
+    if volume_name['Volume name'] == b'':
+        volume_name['Volume name'] is None
+    else:
+        while True:
+            if volume_name['Volume name'].endswith(b'\x00\x00'):
+                volume_name['Volume name'] = volume_name['Volume name'][:-2]
+            else:
+                break
+        volume_name['Volume name'] = volume_name['Volume name'].decode('utf-16')
+
+
     next = volume_name['Attribute size entry'] + volume_name['Attribute first offset']
 
     return volume_name, next
@@ -341,7 +359,7 @@ def parse_volume_name(volume_name, raw_record, next_offset):
 
 ########################## $VOLUME_INFORMATION ATTRIBUTE ###############################################################
 
-# Not used
+# Gives information about the file system version
 def parse_volume_information(volume_information, raw_record, next_offset):
     volume_information.clear()
 
@@ -352,6 +370,13 @@ def parse_volume_information(volume_information, raw_record, next_offset):
     volume_information['Attribute first offset'] = next_offset
     parse_attribute_header(record, volume_information)
 
+    record = record[volume_information['Attribute header size']:]
+    major_version = struct.unpack('<B', record[8:9])[0]
+    minor_version = struct.unpack('<B', record[9:10])[0]
+    volume_information['Major version'] = major_version
+    volume_information['Minor version'] = minor_version
+    volume_information['NTFS version'] = f'{major_version}.{minor_version}'
+
     next = volume_information['Attribute size entry'] + volume_information['Attribute first offset']
 
     return volume_information, next
@@ -359,10 +384,14 @@ def parse_volume_information(volume_information, raw_record, next_offset):
 
 ########################## $DATA ATTRIBUTE #############################################################################
 
+# http://inform.pucp.edu.pe/~inf232/Ntfs/ntfs_doc_v0.5/concepts/data_runs.html
+# data runs are made of pointers that are signed integers (except for the first one that is always positive)
+# pointers are added to each other (means that the 3rd cluster is related to the 2nd one, etc.)
 def run_list(first_off, record):
     # left nibble = number of bytes that contains the position of the cluster in the pointer
     # right nibble = number of bytes that contains the number of cluster in the pointer
     run_list = []
+    relative_position = 0
     while True:
         pointer_length = struct.unpack("<B", record[first_off:first_off + 1])[0]
         left, right = pointer_length >> 4, pointer_length & 0x0F
@@ -370,9 +399,15 @@ def run_list(first_off, record):
         first_off += 1
 
         nb_cluster = int.from_bytes(record[first_off:first_off + right], 'little')
-        pos_cluster = int.from_bytes(record[first_off + right:first_off + length], 'little')
+        pos_cluster = int.from_bytes(record[first_off + right:first_off + length], 'little', signed=True)
+        # handling sparse files which have pos_cluster = 0 -> they are not fragmented files
+        # TODO: what about compressed files?
+        if pos_cluster == 0:
+            run_list.append((pos_cluster, nb_cluster))
+        else:
+            relative_position += pos_cluster
+            run_list.append((relative_position, nb_cluster))
         first_off += length
-        run_list.append((pos_cluster, nb_cluster))
 
         if record[first_off:first_off + 1] == b'\x00':
             break
@@ -425,16 +460,20 @@ def parse_index_root(index_root, raw_record, next_offset):
     index_root['Attribute type ID'] = struct.unpack('<I', record[0:4])[0]
     index_root['Type'] = attributes_ID[index_root['Attribute type ID']]
     index_root['Collation rule'] = struct.unpack('<I', record[4:8])[0]
-    index_root['Index entry size'] = struct.unpack('<I', record[8:12])[0]
+    index_root['Index record size (bytes)'] = struct.unpack('<I', record[8:12])[0]
     # Number of clusters or logarithm of the size (given in the boot sector)
-    index_root['Cluster per index record'] = struct.unpack('<B', record[12:13])[0]
+    index_root['Index record size (clusters)'] = struct.unpack('<B', record[12:13])[0]
+
+    # parsing the node header
     index_root.update(parse_index_node_header(index_node, record[16:]))
 
-    # Parses only directory indexes for now
+    # Parses only directory indexes entries for now
     if index_root['Type'] == '$FILE_NAME':
         match index_root['Index flag']:
             case 0:
                 index_root.update(parse_index_entry(index_entry, index_root, record[32:]))
+            # index entries are in the $INDEX_ALLOCATION attribute
+            # possible to have entries in INDEX_ROOT if Flag = 1 ?
             case 1:
                 pass
             case _:
@@ -451,7 +490,9 @@ def parse_index_root(index_root, raw_record, next_offset):
 def parse_index_node_header(index_node, record):
     index_node.clear()
 
+    # offset are related to the start of the node header
     index_node['Offset for 1st entry (starting node header)'] = struct.unpack('<I', record[0:4])[0]
+    # Offset to end of used poron of index entry list, which is relave to start of node header
     index_node['Index entry total size'] = struct.unpack('<I', record[4:8])[0]
     index_node['Index entry allocated size'] = struct.unpack('<I', record[8:12])[0]
     index_node['Index flag'] = struct.unpack('<B', record[12:13])[0]
@@ -475,15 +516,21 @@ def parse_index_entry(index_entry, index, record):
     # The stream is a copy of the filename content in the MFT entry of the indexed file/sub-directory
     index['Filenames in directory'] = []
 
+    # -16 to remove the node header
     length_stream = index['Index entry allocated size'] - 16
 
-    match index['Index flag']:
-        case 0:
+    # match index['Index flag']:
+        # case 0:
+
+    match index['Type']:
+        case '$FILE_NAME':
             while length_stream > 0:
                 try:
-                    # The file reference is on 8 bytes : 6 for the MFT entry number and the last 2 for the sequence number
+                    # The file reference is on 8 bytes : 6 for the MFT entry number and the last 2 for the sequence
+                    # number
                     index_entry['MFT file reference'] = (unpack6(record[0:6]), struct.unpack('<H', record[6:8]))
                     index_entry['Length of entry'] = struct.unpack('<H', record[8:10])[0]
+                    # stream can be e.g. $FILE_NAME structure
                     index_entry['Length of stream'] = struct.unpack('<H', record[10:12])[0]
                     index_entry['Index entry flag'] = struct.unpack('<I', record[12:16])[0]
 
@@ -507,21 +554,24 @@ def parse_index_entry(index_entry, index, record):
                             index_entry['Index entry flag (verbose)'] = 'Child nodes exist'
                             entry = record[:index_entry['Length of entry']]
                             index_entry['VCN of child nodes'] = entry[:-8]
+                        # if the 'last entry' flag is set, we break the loop
                         case 2:
                             index_entry['Index entry flag (verbose)'] = 'Last entry in list'
                             break
                         case 3:
-                            # TODO: gérer les child nodes ?
+                            # TODO: gérer les child nodes ? Pas trop utile de reconstuire le B-Tree pour la stratigraphie
                             index_entry['Index entry flag (verbose)'] = ['Child nodes exists', 'Last entry in list']
                             break
                         case _:
                             pass  # index_entry['Index entry flag'])
 
-                except Exception:
+                except Exception as e:
+                    print(f'Somewhat this error occurred: {e}')
                     break
-
-        case 1:
+        case _:
             pass
+        #case 1:
+        #    pass
 
     return index
 
@@ -555,7 +605,7 @@ def parse_index_allocation(index_allocation, raw_record, next_offset):
 ########################## $BITMAP ATTRIBUTE ###########################################################################
 
 # Not considered
-def parse_bitmap(bitmap, raw_record, next_offset):
+def parse_bitmap_attribute(bitmap, raw_record, next_offset):
     bitmap.clear()
 
     if raw_record[next_offset:next_offset + 4] != b'\xB0\x00\x00\x00':
@@ -695,7 +745,7 @@ def parse_attributes(records_dict):
                         MFT_record['$INDEX_ALLOCATION'], next_offset = parse_index_allocation(index_allocation, v,
                                                                                               next_offset)
                     case b'\xB0\x00\x00\x00':
-                        MFT_record['$BITMAP'], next_offset = parse_bitmap(bitmap, v, next_offset)
+                        MFT_record['$BITMAP'], next_offset = parse_bitmap_attribute(bitmap, v, next_offset)
                     case b'\xC0\x00\x00\x00':
                         MFT_record['$REPARSE_POINT'], next_offset = parse_reparse_point(reparse_point, v, next_offset)
                     case b'\xD0\x00\x00\x00':
@@ -747,9 +797,10 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--output', help='output directory for the created files', required=True)
     parser.add_argument('-c', '--csv', help='output MFT content into a csv file', required=False, action='store_true')
     parser.add_argument('-j', '--json', help='output MFT content into a csv json', required=False, action='store_true')
-
+    parser.add_argument('-p', '--path', help='If specified, will reconstruct the path in the file system for each file', required=False, action='store_true')
 
     args = parser.parse_args()
+    args.output = Path(args.output)
 
     if not os.path.isdir(args.output):
         os.mkdir(args.output)
@@ -776,12 +827,21 @@ if __name__ == '__main__':
                 break
 
     MFT_parsed = parse_attributes(mftRecords)
-    MFT_parsed = parse_tree(MFT_parsed)
-    logging.info(
-        f'The parsing has finished successfully \n{len(MFT_parsed)}/{j} used entries in the MFT')
 
-    if args.json:
-        MFT_to_json(args.output, MFT_parsed)
+    if args.path:
+        MFT_parsed = parse_tree(MFT_parsed)
+    logging.info(f'The parsing has finished successfully \n{len(MFT_parsed)}/{j} used entries in the MFT')
 
-    if args.csv:
-        MFT_to_csv(args.output, MFT_parsed)
+    # if args.json:
+    #     MFT_to_json(args.output, MFT_parsed)
+    try:
+        if args.csv:
+            MFT_to_csv(args.output, MFT_parsed)
+        else:
+            MFT_to_json(args.output, MFT_parsed)
+    except TypeError:
+        print()
+
+
+    # temp = filter(MFT_parsed)
+    # save_to_pickle(temp, args.output)
