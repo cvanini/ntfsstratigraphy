@@ -27,6 +27,8 @@ def extract_from_volume(volume, stage, n):
 
     curr = os.getcwd()
     path = f'{curr}\\data\\{stage}\\{str(n)}'
+    if os.path.isdir(path):
+        path = f'{curr}\\data\\{stage}\\{str(n)}_'
     os.mkdir(path)
 
     # Extracting and parsing the $boot to obtain volume information
@@ -63,21 +65,24 @@ def parse_all(path):
     MFT_to_csv(f"{path}", MFT_dict)
 
 
+def activate_USN(volume):
+    subprocess.run(['fsutil', 'usn', 'createJournal', volume], shell=True)
+
 
 def extract_USN_logfile(volume, stage):
     # pas aussi simple que ça pour l'USN, pas toujours le même numéro d'entrée:
     logger.info(f"Extracting the $UsnJrnl")
     subprocess.run(['fls.exe', f'\\\\.\\{volume}', '11'],
                    cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
-    input = input("Please write the attribute number containing the $J: ")
-    subprocess.run(['icat.exe', f'\\\\.\\{volume}', input, '>', f"{curr}\\data\\{stage}\\$J"],
+    attribute = input("Please write the attribute number containing the $J: ")
+    subprocess.run(['icat.exe', f'\\\\.\\{volume}', attribute, '>', f"{curr}\\data\\{stage}\\$J"],
                    cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
     logger.info(f"Extracting the $LogFile")
     subprocess.run(['icat.exe', f'\\\\.\\{volume}', '2', '>', f"{curr}\\data\\{stage}\\$LogFile"],
                    cwd=f'{curr}\\sleuthkit\\bin\\', shell=True)
 
 def parse_usn(stage):
-    subprocess.run(['python', 'usn.py', '--csv', '-f', f'{curr}\\data\\{stage}\\$J', '-o', f'{curr}\\data\\{stage}\\usn.csv'], cwd=f'{curr}\\usn_parser\\', shell=True)
+    subprocess.run(['python', 'usn.py', '--verbose', '-f', f'{curr}\\data\\{stage}\\$J', '-o', f'{curr}\\data\\{stage}\\usn.txt'], cwd=f'{curr}\\usn_parser\\', shell=True)
 
 
 # create files of the specified size, in bytes.
@@ -92,14 +97,25 @@ def create(path, size):
 
 
 def delete(path, k):
-    # subprocess.run(["del", f"{path}\\{str(k-random.randint(1,k))}.txt"], shell=True)
-    k = int(k)
-    try:
-        rand = random.randint(1, k-1)
-        if os.path.exists(f"{path}\\{rand}.txt"):
-            os.remove(f"{path}\\{rand}.txt")
-    except Exception:
-        pass
+    subprocess.run(["del", f"{path}\\{str(k-5)}.txt"], shell=True)
+    logger.info(f"Deleted {str(k-5)}.txt at {datetime.now()}")
+    # k = int(k)
+    # try:
+    #     rand = random.randint(1, k-1)
+    #     if os.path.exists(f"{path}\\{rand}.txt"):
+    #         os.remove(f"{path}\\{rand}.txt")
+    #         logger.info(f"Deleted {rand}.txt at {datetime.now()}")
+    # except Exception:
+    #     pass
+
+def formatting():
+    subprocess.run("diskpart", shell=True)
+    # subprocess.run("list disk", shell=True)
+    # n = input("Please write the disk number : ")
+    # subprocess.run("select", "disk", f"{n}", shell=True)
+    # subprocess.run("clean", shell=True)
+    # subprocess.run("format", "fs=ntfs", shell=True)
+    # subprocess.run("assign", shell=True)
 
 
 # manipulating timestamps with Powershell command lines
@@ -149,77 +165,90 @@ if __name__ == '__main__':
 
     total, used, free = shutil.disk_usage(args.volume)
     logger.info(f'The volume has a capacity of {total} bytes')
+    # activate_USN(args.volume)
     # extract_from_volume(args.volume, args.stage, 0)
     # algorithm(args.volume, f'{curr}\\data\\{args.stage}')
 
-    logger.info("Creating files..")
+    # logger.info("Creating files..")
 
     n = 1
-    p = extract_from_volume(args.volume, args.stage, 0)
-    parse_all(p)
-
-    while True:
-        # To have the disk not full
-        # while n < 800:
-        try:
-            # creating files directly from the command line :
-            # subprocess.run(["fsutil", "file", "createnew", f"{args.volume}\\{str(n)}.txt", f"{args.size}"])
-            if args.size:
-                # fixed file size
-                create(f'{args.volume}\\{str(n)}', args.size)
-            else:
-                # random file size
-                random_size = random.randint(100, 1024 * 1024 * 10)
-                create(f'{args.volume}\\{str(n)}', random_size)
-                # to create files with random names (test if there is a difference with because of the B+-Tree)
-                # random_string = ''.join(random.choice(string.ascii_lowercase) for i in range(1,6))
-                # create(args.volume + '\\' + str(random_string), random_size)
-
-            for i in range(10, total, 40):
-                if i == n:
-                    logger.info("Deleting a file")
-                    delete(args.volume, n)
-
-            n += 1
-            time.sleep(random.uniform(0.5, 2))
-            # time.sleep(2)
-            # to extract the system files at some stage of the process
-            # for i in range(1, total, 100):
-            #     if i == n:
-            #         logger.info(f"File #{n} was just created!")
-            #         p = extract_from_volume(args.volume, args.stage, n)
-            #         parse_all(p)
-
-            # for i in range(1, total, 100):
-            #     if i == n:
-            #         logger.info(f"File #{n} was just created !")
-            #         p = extract(args.volume, args.stage, n)
-            #         parse_all(p)
-            # logger.info(f'File {n} created size: {random_size // 4096}')
-
-
-            # if args.backdating:
-            #    if n == args.backdating:
-            #        backdating(f'{args.volume}')
-
-            # to test the algorithm
-            # logger.info(f'File {n} created size : {random_size/4096}')
-            # for j in range(50, total, 100):
-            #     if j == n:
-            #         delete(args.volume, n)
-            #         logger.info(f"File {n} was deleted")
-
-            # algorithm(args.volume, f'{curr}\\data\\{args.stage}')
-
-
-        # Escaping the loop when an OS memory error is catched
-        except IOError as e:
-            logger.info(f'{str(e)}')
-            break
+    # p = extract_from_volume(args.volume, args.stage, 0)
+    # parse_all(p)
+    #
+    # while True:
+    #     # To have the disk not full
+    #     # while n < 800:
+    #     try:
+    #         # creating files directly from the command line :
+    #         # subprocess.run(["fsutil", "file", "createnew", f"{args.volume}\\{str(n)}.txt", f"{args.size}"])
+    #         if args.size:
+    #             # fixed file size
+    #             create(f'{args.volume}\\{str(n)}', args.size)
+    #         else:
+    #             # random file size
+    #             random_size = random.randint(100, 1024 * 1024 * 20)
+    #             create(f'{args.volume}\\{str(n)}', random_size)
+    #             # to create files with random names (test if there is a difference with because of the B+-Tree)
+    #             # random_string = ''.join(random.choice(string.ascii_lowercase) for i in range(1,6))
+    #             # create(args.volume + '\\' + str(random_string), random_size)
+    #
+    #         # if n == 150:
+    #         #     delete(args.volume, n)
+    #
+    #         # for i in range(100, total, 100):
+    #         #     if i == n:
+    #         #         logger.info("Deleting a file")
+    #         #         delete(args.volume, n)
+    #
+    #         n += 1
+    #         time.sleep(random.uniform(0.4, 0.7))
+    #         # time.sleep(2)
+    #         # to extract the system files at some stage of the process
+    #         # for i in range(1, total, 100):
+    #         #     if i == n:
+    #         #         logger.info(f"File #{n} was just created!")
+    #         #         p = extract_from_volume(args.volume, args.stage, n)
+    #         #         parse_all(p)
+    #
+    #         # for i in range(1, total, 100):
+    #         #     if i == n:
+    #         #         logger.info(f"File #{n} was just created !")
+    #         #         p = extract(args.volume, args.stage, n)
+    #         #         parse_all(p)
+    #         # logger.info(f'File {n} created size: {random_size // 4096}')
+    #
+    #
+    #         # if args.backdating:
+    #         #    if n == args.backdating:
+    #         #        backdating(f'{args.volume}')
+    #
+    #         # to test the algorithm
+    #         # logger.info(f'File {n} created size : {random_size/4096}')
+    #         # for j in range(50, total, 100):
+    #         #     if j == n:
+    #         #         delete(args.volume, n)
+    #         #         logger.info(f"File {n} was deleted")
+    #
+    #         # algorithm(args.volume, f'{curr}\\data\\{args.stage}')
+    #
+    #
+    #     # Escaping the loop when an OS memory error is catched
+    #     except IOError as e:
+    #         logger.info(f'{str(e)}')
+    #         break
 
     logger.info('Extracting $Bitmap and $MFT at final stage..!')
     p = extract_from_volume(args.volume, args.stage, n)
     parse_all(p)
-    extract_USN_logfile(args.volume, args.stage)
+
+    # bloup = input("Please format the disk")
+
+    # extract_USN_logfile(args.volume, args.stage)
+    # parse_usn(args.stage)
+    # formatting()
+    # p = extract_from_volume(args.volume, args.stage, n+1)
+    # parse_all(p)
+    # extract_USN_logfile(args.volume, args.stage)
+
 
     logger.info('Process finished !')

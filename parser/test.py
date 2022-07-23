@@ -2,6 +2,7 @@ import os
 import struct
 
 import MFT_utils
+from parser.process import *
 
 
 def create(path, size):
@@ -20,5 +21,8 @@ def delete(path, filename):
 
 if __name__ == '__main__':
 
-    d = {1: {'header': {'Resident': 1, 'bloup': 2}}, 2: {'header': {'Resident': 0}}}
-    l = {k : v for k, v in d.items() if v['header']['bloup'] == 2}
+    # d = {1: {'header': {'Resident': 1, 'bloup': 2}}, 2: {'header': {'Resident': 0}}}
+    # l = {k : v for k, v in d.items() if v['header']['bloup'] == 2}
+
+    formatting()
+
