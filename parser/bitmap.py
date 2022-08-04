@@ -29,6 +29,7 @@ def parse_bitmap(path):
     return bitmap
 
 
+# writes the bitmap content into CSV with two columns (Cluster number/Status : allocated or not)
 def bitmap_to_csv(dir, bitmap):
     bitmap_logger.info(f"Starting writting to CSV file..")
     fieldnames = ['Cluster #', 'Status']
@@ -44,10 +45,13 @@ def bitmap_to_csv(dir, bitmap):
     bitmap_logger.info('CSV file of the $Bitmap is written !')
 
 
+# Used to test the best fit algorithm on a volume
 def test_algorithm(bitmap):
     bitmap_logger.info(f"Extracting information on available free spaces")
+    # do the inventory of free spaces by considering sequences of zeros
     free_spaces = [int(k) for k, v in tqdm(bitmap.items(), desc='[Looking for free spaces]') if v == 0]
     bitmap_logger.info(f"Creating ranges of free space")
+    # creates lists of intervals of free spaces, sorted by length
     list_ranges = sorted([list(group) for group in mit.consecutive_groups(free_spaces)], key=lambda x: len(x))
     ranges = [f"[{x[0]}{'-' + str(x[-1]) if len(x) > 1 else ''}]" for x in list_ranges]
     bitmap_logger.info(f'List of free spaces sorted by ascending size :\n{ranges}')

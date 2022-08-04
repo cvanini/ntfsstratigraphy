@@ -18,7 +18,7 @@ MFT_logger = logging.getLogger('MFT')
 # Convert the Windows FILETIME timestamps to readable timestamps (UTC) (format : 01.01.1970 00:00:00 + 0000)
 # Timestamps in entries are expressed in UTC (https://www.sciencedirect.com/topics/computer-science/master-file-table)
 def convert_filetime(date_to_convert: int):
-    try :
+    try:
         delta = timedelta(microseconds=date_to_convert / 10)
         win_date = datetime(1601, 1, 1, 0, 0, 0)
         timestamp = win_date + delta
@@ -35,6 +35,7 @@ def convert_filetime(date_to_convert: int):
         print(delta, win_date)
         return None
         pass
+
 
 # method for parsing the bitmap attribute in the entry 0 of the $MFT, indicating the entries allocated
 # used to check if the MFT.py does its job correctly ! (doesn't forget any entry)
@@ -67,7 +68,6 @@ def MFT_to_csv(dir, MFT):
 
     with open(f'{dir}\\MFT.csv', 'w', newline='', encoding='utf-8') as outfile_csv:
         writer = csv.DictWriter(outfile_csv, fieldnames=fieldnames, delimiter=',')
-
 
         writer.writeheader()
         for entry, value in tqdm(MFT.items(), desc='[csv]'):
@@ -189,7 +189,8 @@ def unpack6(x):
 # Build the path of each entries file/dir recursively
 # Can be then used to sort based on Path (ex. keep only C:\Users\)
 def parse_tree(MFT):
-    # creating a working copy:
+    MFT_logger.info("Starting reconstructing paths")
+    # creating a working copy:: takes some time
     temp_MFT = copy.deepcopy(MFT)
     length = len(MFT)
 
@@ -199,11 +200,12 @@ def parse_tree(MFT):
     # Parents that already have their path found are appended to this list :
     p_ids = [5]
 
-    n = 0
+    n = 1
 
     # information concerning the parent entry is stored in the $FILE_NAME attribute.
     # The reconstruction starts from the root directory, which is entry number 5.
     while 1:
+        MFT_logger.info(f"Iteration number {n}")
         for k, entry in tqdm(temp_MFT.items(), desc=f'[Path]'):
             # As there can be multiple filenames (cf. hard links):
             # p = []
@@ -213,7 +215,8 @@ def parse_tree(MFT):
                         parent_entry = entry[m]['Parent entry number']
                         current_filename = entry[m]['Filename']
 
-                        # TODO: hard links ?
+                        # TODO: hard links : plusieurs chemins pour une même entrée
+                        # problème : certains fichiers ont des hard links à 6000
                         if parent_entry in p_ids:
                             result[k] = Path(result[parent_entry]) / current_filename
                             # p.append(str(Path(result[parent_entry]) / current_filename))
@@ -237,6 +240,17 @@ def parse_tree(MFT):
         #     print(lonely_childs)
         #     break
         else:
+            MFT_logger.info(f"Number of reconstructed paths: {len(result.keys())}")
+            # Le plus rapide ça reste le dictionnaire en compréhension
+            MFT_logger.info("Reducing the dictionary of entries to find a path")
+            # takes a lot of time :
+            # for k in list(temp_MFT.keys()):
+            #     if k not in p_ids:
+            #         del temp_MFT[k]
+
+            # to_delete = set(temp_MFT.keys()).difference(p_ids)
+            # for d in to_delete:
+            #     del temp_MFT[d]
             temp_MFT = {k: v for k, v in temp_MFT.items() if k not in p_ids}
 
         n += 1

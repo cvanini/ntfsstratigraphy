@@ -39,57 +39,13 @@ def extract_from_image(offset, image, output):
     # command to copy the $MFT of the specified volume (entry 0)
     subprocess.run(['icat.exe', '-o', f'{offset}', '-f', 'ntfs', f'{image}', '0', '>', f"{output}\\$MFT"], cwd=sleuthkit, shell=True)
 
-########################################################################################################################
-# WORK IN PROGRESS
-# Add a hash comparison with the NSRL database to flag system files
-
-def listing_files(database, offset, image, output):
-    logger.info('Starting the flagging of system files on the volume')
-
-    logger.info('Listing files')
-    subprocess.run(['fls.exe', '-r', '-o', f'{offset}', f'{image}', '>', f"{output}\\temp_file_list.txt"],
-                   cwd=sleuthkit, shell=True)
-
-    inodes = []
-    with open(f'{output}\\temp_file_list.txt', 'r') as file:
-        data = file.readlines()
-
-        for line in data:
-            temp = line.split(': ')[0]
-            inodes.append(temp.split(' ')[-1])
-
-    with open(f'{output}\\attributes_file_list.txt', 'w') as file:
-        file.write('\n'.join([x for x in inodes]))
-
-    # subprocess.run('Get-Content', f'${output}\\temp_file_list.txt', '|', 'ForEach-Object', '{$_.split(":")[0].split(" ")[-1]}', '>', f'{output}\\file_list_inode.txt')
-
-
-def hashing(file_list, offset, image, output):
-    # TODO: problème c'est d'avoir le hash de tous les fichiers d'une image
-    # with open(f'{output}\\{file_list}', 'r') as file:
-    #     data = file.readlines()
-    #
-    #     for file in data:
-    #         subprocess.run(['icat.exe', '-o', f'{offset}', f'{image}', '>', f"{output}\\temp.txt"],
-    #                        cwd=sleuthkit, shell=True)
-    pass
-
-# TODO: include database in the parser
-def nsrl(database, offset, image, output):
-
-    pass
-    # TODO: indexer la base de données
-    # TODO: filtrer NSRL pour avoir que les OS Windows ?
-    # TODO: hfind sur la liste de fichiers, retourner genre une liste de 0 et 1 par inode ?
-    # TODO: ajouter ça au dico de la MFT dans genre le header MFT['Is a file system']
-
 
 
 if __name__ == '__main__':
     parser = ArgumentParser(description='Image file parser : extract system files and parse them to product csv files')
     parser.add_argument('-f', '--file', help='image file - please enter the entire file path as the current directory while processing commands on Powershell is .\parser\sleuthkit', required=True)
     parser.add_argument('-o', '--output', help='output directory for the created files', required=True)
-    parser.add_argument('-j', '--json', help='output MFT content into a csv json', required=False, action='store_true')
+    parser.add_argument('-j', '--json', help='output MFT content into a json file', required=False, action='store_true')
     # parser.add_argument('-n', '-nsrl', help='path to the NSRL database file', required=False)
 
     args = parser.parse_args()
@@ -110,20 +66,23 @@ if __name__ == '__main__':
     else:
         raise Exception(f'No such file or directory: {file}')
 
-
+    # parsing $Boot at first and saving to CSV
     boot = parse_boot(f"{args.output}\\$Boot")
     boot_to_csv(args.output, boot)
 
+    # then MFT in csv or json depending on the humor
     MFT = parse_MFT(f"{args.output}\\$MFT")
     if args.json:
         MFT_to_json(args.output, MFT)
     else:
         MFT_to_csv(args.output, MFT)
-        
+
+    # checking the number of entries
     len_MFT = parse_bitmap_MFT(f"{args.output}")
     if len_MFT != len(MFT):
         logger.info(f'Warning : {len_MFT} entries ($BITMAP in entry 0) vs {len(MFT)} entries (extracted from code)')
 
+    # Finally the $Bitmap
     bitmap = parse_bitmap(f"{args.output}\\$Bitmap")
     bitmap_to_csv(args.output, bitmap)
 

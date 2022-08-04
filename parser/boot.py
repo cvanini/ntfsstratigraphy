@@ -26,6 +26,7 @@ def parse_boot(filename):
 
     [boot_logger.info(f'{k} : {v}') for k, v in boot.items()]
 
+    # size can be expressed in two different ways
     entry_size = struct.unpack("<b", data[64:65])[0]
     if entry_size < 0:
         entry_size = -entry_size
@@ -40,13 +41,14 @@ def parse_boot(filename):
 
     return boot
 
+
+# writes boot info into CSV file with 2 columns (Information/Value)
 def boot_to_csv(dir, dict_boot):
     with open(f'{dir}\\boot.csv', 'w', newline='', encoding='utf-8') as csvfile:
         csvwriter = csv.DictWriter(csvfile, fieldnames=['Information', 'Value'])
         csvwriter.writeheader()
         for k, v in dict_boot.items():
             csvwriter.writerow({'Information': k, 'Value': v})
-
 
 
 if __name__ == '__main__':

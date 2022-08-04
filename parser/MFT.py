@@ -5,7 +5,11 @@
 Principal attributes that can be recovered are $STANDARD_INFORMATION, $FILE_NAME and $DATA.
 Only the EA attributes are not considered during the parsing (only the header is parsed)
 Sources : File system forensic analysis (B. Carrier, 2005) and https://flatcap.github.io/linux-ntfs/ntfs/attributes/index.html
+
+The script mostly uses the struct library to read bytes after bytes.
+
 '''
+
 import os
 import struct
 import logging
@@ -67,6 +71,7 @@ def parse_header(header, raw_record):
         case 8:
             header['Allocation flag (verbose)'] = 'Special index'
         case _:
+            # other flags exist but are not referenced in the litterature (e.g. $USNJrnl has allocation flag 5)
             header['Allocation flag (verbose)'] = 'Unknown'
 
     header['Entry logical size'] = struct.unpack("<I", raw_record[24:28])[0]
@@ -75,6 +80,7 @@ def parse_header(header, raw_record):
     # base entry and sub-entries contain in their header the MFT entry number of the base entry:
     header['Base record entry number'] = unpack6(raw_record[32:38])
     header['Base record sequence number'] = struct.unpack('<H', raw_record[38:40])[0]
+    # sequence number || entry number = file reference address
     header['Base record reference'] = ''.join([str(x) for x in raw_record[32:40]])
     header['Next attribute ID'] = struct.unpack("<H", raw_record[40:42])[0]
     header['Entry number'] = struct.unpack("<I", raw_record[44:48])[0]
@@ -145,19 +151,23 @@ def parse_attribute_header(record, dict):
         offset = dict['Offset to name']
         dict['Name'] = record[offset:offset + dict['Attribute name length']].decode('utf-16')
 
-        # Some of the referenced name in the litterature
+        # Some of the referenced names in the litterature
         match dict['Name']:
             # Index of filenames
             case '$I30':
                 dict['Index type'] = 'Directory'
+            # Used in the security descriptor :
             case '$SDH':
                 dict['Index type'] = 'Security descriptors index'
             case '$SII':
                 dict['Index type'] = 'Security Ids index'
+            # Used in the object_id
             case '$O':
                 dict['Index type'] = 'Object Ids or Owner Ids indexes'
+            # $Quota file
             case '$Q':
                 dict['Index type'] = 'Quotas index'
+            # Reparse point
             case '$R':
                 dict['Index type'] = 'Reparse Points index'
             case _:
@@ -180,7 +190,7 @@ def parse_standard(standard, raw_record, next_offset):
     content_offset = standard['Attribute content start']
     record = record[content_offset:]
 
-    # Use the function convert_filetime from the module MFT_utils.py
+    # Uses the function convert_filetime from the module MFT_utils.py
     standard['Creation time'] = convert_filetime(struct.unpack("<Q", record[:8])[0])
     standard['Modification time'] = convert_filetime(struct.unpack("<Q", record[8:16])[0])
     standard['Entry modification time'] = convert_filetime(struct.unpack("<Q", record[16:24])[0])
@@ -231,6 +241,7 @@ def parse_attribute_list(attribute_list, raw_record, next_offset):
             length = attribute_list['Attribute size'] - attribute_list['Attribute header size']
 
             attributes = {}
+            # creates a dict with types as keys and entry number of the base record as value
             while length > 0:
                 type = attributes_ID[struct.unpack('<I', record[0:4])[0]]
                 record_length = struct.unpack('<H', record[4:6])[0]
@@ -284,6 +295,7 @@ def parse_filename(filename, raw_record, next_offset):
 
 
 ########################## $OBJECT_ID ATTRIBUTE ########################################################################
+# Not yet handled
 
 # A file can be addressed using its object ID (a file can be renamed but still be found). The $Extend\$ObjId has an index
 # named $O that correlates a files object ID to its MFT entry.
@@ -311,7 +323,7 @@ def parse_objectid(object_id, raw_record, next_offset):
 
 ########################## $SECURITY_DESCRIPTOR ATTRIBUTE ##############################################################
 
-# Not used, but apparently stores encryption keys of files
+# Not used, but apparently stores encryption keys of files + rights over/owner of a file
 def parse_security_descriptor(security_descriptor, raw_record, next_offset):
     security_descriptor.clear()
 
@@ -339,17 +351,22 @@ def parse_volume_name(volume_name, raw_record, next_offset):
     record = raw_record[next_offset:]
     volume_name['Attribute first offset'] = next_offset
     parse_attribute_header(record, volume_name)
-    volume_name['Volume name'] = record[volume_name['Attribute header size']:volume_name['Attribute size']]
-    if volume_name['Volume name'] == b'':
-        volume_name['Volume name'] is None
+    if volume_name['Attribute header size'] == volume_name['Attribute size']:
+        volume_name['Volume name'] = 'None'
     else:
-        while True:
-            if volume_name['Volume name'].endswith(b'\x00\x00'):
-                volume_name['Volume name'] = volume_name['Volume name'][:-2]
-            else:
-                break
-        volume_name['Volume name'] = volume_name['Volume name'].decode('utf-16')
+        volume_name['Volume name'] = record[volume_name['Attribute header size']:volume_name['Attribute size']]
 
+        # Seems that volumes with OS do not have a volume name
+        if volume_name['Volume name'] == b'':
+            volume_name['Volume name'] = 'None'
+        else:
+            while True:
+                # getting rid over the padding
+                if volume_name['Volume name'].endswith(b'\x00\x00'):
+                    volume_name['Volume name'] = volume_name['Volume name'][:-2]
+                else:
+                    break
+            volume_name['Volume name'] = volume_name['Volume name'].decode('utf-16')
 
     next = volume_name['Attribute size entry'] + volume_name['Attribute first offset']
 
@@ -374,6 +391,7 @@ def parse_volume_information(volume_information, raw_record, next_offset):
     minor_version = struct.unpack('<B', record[9:10])[0]
     volume_information['Major version'] = major_version
     volume_information['Minor version'] = minor_version
+    # e.g. 3.1
     volume_information['NTFS version'] = f'{major_version}.{minor_version}'
 
     next = volume_information['Attribute size entry'] + volume_information['Attribute first offset']
@@ -398,6 +416,7 @@ def run_list(first_off, record):
         first_off += 1
 
         nb_cluster = int.from_bytes(record[first_off:first_off + right], 'little')
+        # note the signed value here
         pos_cluster = int.from_bytes(record[first_off + right:first_off + length], 'little', signed=True)
         # handling sparse files which have pos_cluster = 0 -> they are not fragmented files
         # TODO: what about compressed files?
@@ -454,10 +473,10 @@ def parse_index_root(index_root, raw_record, next_offset):
     # Parsing the index root header
     start = index_root['Attribute content start']
     record = record[start:]
-    # Attribute type ID = 0 if index entry doesn't use an attribute
-    # TODO: attention ?
+    # Attribute type ID = 0 if index entry doesn't use any attribute
     index_root['Attribute type ID'] = struct.unpack('<I', record[0:4])[0]
     index_root['Type'] = attributes_ID[index_root['Attribute type ID']]
+    # can't understand the use of the collation rule.. :) but let's extract it too
     index_root['Collation rule'] = struct.unpack('<I', record[4:8])[0]
     index_root['Index record size (bytes)'] = struct.unpack('<I', record[8:12])[0]
     # Number of clusters or logarithm of the size (given in the boot sector)
@@ -593,7 +612,6 @@ def parse_index_allocation(index_allocation, raw_record, next_offset):
     # the names, length, etc. of files and directories contained in one parent directory. Its content is not considered
     # yet, as it is only the B-Tree that is used by NTFS to manage files and directories
     # The content of the following bitmap attribute tells which index record is in use.
-    # TODO : limiter aux I30 ? Prend aussi les security descriptor, etc.
     index_allocation['Data run'], index_allocation['First cluster'] = run_list(
         index_allocation['Run list\'s start offset'], record)
     next = index_allocation['Attribute size entry'] + index_allocation['Attribute first offset']
@@ -715,6 +733,8 @@ def parse_attributes(records_dict):
                                                                                           next_offset)
                     case b'\x30\x00\x00\x00':
                         # A file can have the two types of filename format (DOS and Win32)
+                        # Do not take in consideration the case of hard links
+                        # TODO: hard links
                         if i == 1:
                             MFT_record['$FILE_NAME'], next_offset = parse_filename(filename, v, next_offset)
                         else:
@@ -755,6 +775,7 @@ def parse_attributes(records_dict):
                     case b'\x00\x01\x00\x00':
                         MFT_record['$LOGGED_UTILITY_STREAM'], next_offset = parse_logged_utility_stream(
                             logged_utility_stream, v, next_offset)
+                    # end of an entry
                     case b'\xFF\xFF\xFF\xFF':
                         MFT[k] = copy.deepcopy(MFT_record)
                         break
@@ -773,10 +794,12 @@ def parse_MFT(path):
 
     mftRecords = {}
     with open(path, 'rb') as f:
+        # breaking the file into chunk of size of MFT entries
         chunk = f.read(MFT_RECORD_SIZE)
         while i < j:
             try:
                 mftRecords[i] = chunk
+                # read 1024 bytes per 1024 bytes
                 chunk = f.read(MFT_RECORD_SIZE)
                 i += 1
             except Exception:
@@ -784,6 +807,7 @@ def parse_MFT(path):
                 break
 
     MFT_parsed = parse_attributes(mftRecords)
+    # reconstructs file paths (very long)
     MFT_parsed = parse_tree(MFT_parsed)
     MFT_logger.info(f'The parsing has finished successfully. {len(MFT_parsed)}/{j} used entries in the MFT')
 
@@ -839,8 +863,6 @@ if __name__ == '__main__':
         else:
             MFT_to_json(args.output, MFT_parsed)
     except TypeError:
-        print()
+        print(f'Wrong file format (must be CSV or json)')
 
 
-    # temp = filter(MFT_parsed)
-    # save_to_pickle(temp, args.output)

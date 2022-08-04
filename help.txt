@@ -3,20 +3,32 @@ Bienvenue dans Forensic-Tools ou ntfs_stratigraphy !
 
 Voici un petit helper permettant de comprendre la structure du projet. 
 
-
 ###########################################################################################################
 
-Le répertoire 'parser' contient les modules principaux - les 3 parsers de fichiers système. Ils sont tous
-3 utilisables de façon indépendante (mais nécessite d'avoir déjà extrait les fichiers en questions), 
-n'hésitez pas à jouer avec le --help de chaque script, bien que ce ne soit pas très sorcier en termes 
-d'arguments à spécifier.
+Le répertoire 'parser' contient les modules de principaux de traitements - les 3 parsers de fichiers 
+système. Ils sont tous 3 utilisables de façon indépendante (mais nécessite d'avoir déjà extrait les 
+fichiers en questions), n'hésitez pas à jouer avec le --help de chaque script, bien que ce ne soit pas 
+très sorcier en termes d'arguments à spécifier. Le script main.py prend en argument une image forensique 
+et fait les étapes d'extraction de $MFT/$Boot/$Bitmap > parsing > enregistrement au format CSV 
+automatiquement. Il demande simplement de spécifier l'offset du début de la partition qui nous intéresse.
 
-	- bitmap.py : $Bitmap
-	- MFT.py : $MFT
-	- boot.py : $Boot
+Dans les ressources, il y a quelques fonctions utiles types extraire les bits de certains bytes, 
+transformation du Windows FILETIME en qqch de lisible, etc. Il contient également le script process.py, 
+utilisé lors des tests sur les volume live. Ce script effectue des actions et extrait les fichiers
+systèmes à certains temps définis (début, tous les X actions si spécifié, fin) et les transforme directement
+au format CSV à l'aide des 3 parsers. 
+
+	- bitmap.py : traitement du fichier $Bitmap (pas vraiment utilisé finalement)
+	- MFT.py : traitement du fichier $MFT (il manque des attributs, comme certains n'étaient pas
+		utiles dans le cadre de la stratigraphie - type attribut $EA, mais ce sera complété
+		prochainement pour que ce soit un parser complètement fonctionnel et pas visé
+		analyse par stratigraphie)
+	- boot.py : traitement du fichier $Boot, enregistre les informations du volume dans un fichier texte
+		en plus du CSV.
 	- process.py : pour simuler les actions utilisateur. L'exécution se fait depuis une console 
-		       PowerShell avec les droits d'administrateur !
-	- main.py : automatise l'extraction/parsing/traitement (et plus?) de ces fichiers à partir d'une
+		       PowerShell avec les droits d'administrateur ! Ce script est très fouilli, il évoluait
+		       à chaque nouvelle simulation. 
+	- main.py : automatise l'extraction/parsing/traitement de ces fichiers à partir d'une
 		    image forensique donnée en paramètre.
 
 Le répertoire contient également ce qui est nécessaire de la librairie sleuthkit. Dans sleuthkit/bin, il
@@ -26,7 +38,7 @@ https://www.sleuthkit.org/sleuthkit/download.php
 Sans grande surprise, le sous-dossier nsrl contient la base de données NSRL téléchargée depuis :
 https://www.nist.gov/itl/ssd/software-quality-group/national-software-reference-library-nsrl/nsrl-download
 
-
+Note : les répertoires data et output étaient utilisés à des fins de tests !
 
 ###########################################################################################################
 
@@ -42,6 +54,22 @@ les notebook se situent dans un chemin ne contenant ni accents, ni espaces (alle
 
 Avec cela ça devrait correctement marcher.
 
+Également pour les notebook des images d'ordinateur : les graphes étant très lourd, ils ne sont pas 
+'runnés'. Si vous voulez jouer avec il faut décommenter le #fig.show() - mais attention j'ai personnellement
+eu des problèmes où je perdais l'entièreté du notebook lorsqu'il y avait trop de graphes (-> trop lourd)
+
+	- D'ailleurs à ce jour, le notebook du cas CT est déchu (RIP). Heureusement quelques résultats
+	se trouvent dans le cahier de laboratoire.
+
 ###########################################################################################################
 
-app.py : pour un peu de fun.
+Les scripts app.py et rules.py permettent l'automatisation de l'analyse par stratigraphie. Rules.py s'occupe
+de faire les traitements appliqués dans les notebook lors de l'étude et de flaguer les actions utilisateur
+d'intérêt + les fichiers systèmes sur la base de la NSRL et du chemin dans lesquels se trouvent les fichiers. 
+Il enregistre les évènements détectés au format txt (events.txt) et produits des graphes en PDF ou HTML. La
+version interactive permet d'aller chercher sur le graphe où l'action a été détectée. 
+
+App.py avait été créé pour produire un rapport de synthèse interactif - mais finalement pas si utile que ça.
+
+
+ 

@@ -12,6 +12,7 @@ parser/nsrl
 parser/temp.py
 /tests
 /treatments
+/parser/usn_parser
 
 
 # C extensions
