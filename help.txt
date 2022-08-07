@@ -70,6 +70,7 @@ Il enregistre les évènements détectés au format txt (events.txt) et produits
 version interactive permet d'aller chercher sur le graphe où l'action a été détectée. 
 
 App.py avait été créé pour produire un rapport de synthèse interactif - mais finalement pas si utile que ça.
+Il ne marche plus à ce jour. RIP
 
 
  
