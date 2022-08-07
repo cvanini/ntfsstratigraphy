@@ -1,11 +1,6 @@
 '''
-This script produces a synthetic report for the digital stratigraphy analysis of a drive which was previously parsed
-in the parser module (output = files in CSV format). It uses the treated MFT and boot files (CSV format).
-The directory that is given as an input must contain the following files :
-- MFT.csv
-- boot.csv
-- hash_list.csv
-
+Céline Vanini
+07. 2022
 '''
 
 from rules import *

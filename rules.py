@@ -1,4 +1,18 @@
 ### Céline Vanini
+### 07.2022
+
+'''
+This script produces a pre-analysis for the digital stratigraphy analysis of a drive which was previously parsed
+in the parser module (output = files in CSV format). It uses the treated MFT and boot files (CSV format).
+The directory that is given as an input must contain the following files :
+- MFT.csv
+- boot.csv
+- hash_list.csv
+
+'''
+
+#python .\rules.py -d "C:\Users\celin\UNIVERSITE\MA2S2\TdM\Results\COMFOR\process_image" -o "C:\Users\celin\UNIVERSITE\MA2S2\TdM\Results\COMFOR\process_image"
+
 
 import os, math
 from tqdm import tqdm
@@ -173,7 +187,7 @@ def flag_system_files(df, df_nsrl):
     df_flag.loc[df_flag['Parent entry number'].isin([x for x in range(36) if x != 5]), 'Flag'] = 'System file'
     df_flag.loc[df_flag['Path_'].str.startswith('root\\$'), 'Flag'] = 'System file'
 
-    df_flag.loc[df_flag['Path_'].str.startswith('root\\user'), 'Flag'] = 'User'
+    df_flag.loc[df_flag['Path_'].str.startswith('root\\user')  & (df_flag['Flag'] == 'None'), 'Flag'] = 'User'
     df_flag.loc[df_flag['Path_'].str.startswith('root\\$recycle'), 'Flag'] = 'User'
     df_flag['Filename_'] = df_flag['Filename'].str.lower()
     df_flag.loc[(df_flag['Path_'].str.contains('appdata') == True) & (df_flag['Path_'].str.startswith('root\\user')), 'Flag'] = 'AppData'
@@ -204,7 +218,7 @@ def flag_system_files(df, df_nsrl):
     df_flag.loc[df_flag['Flag'] == 'System file', 'Events'] = 'System file'
     df_flag.loc[df_flag['Flag'] == 'NSRLFile', 'Events'] = 'System file'
     df_flag.loc[df_flag['Flag'] == 'Path', 'Events'] = 'System file'
-    df_flag.loc[df_flag['Flag'] == 'AppData', 'Events'] = 'System file'
+    df_flag.loc[df_flag['Flag'] == 'AppData', 'Events'] = 'User'
     df_flag.loc[df_flag['Flag'] == 'User', 'Events'] = 'User'
     df_flag.loc[df_flag['Flag'] == 'None', 'Events'] = 'System file'
 
@@ -417,13 +431,13 @@ def events(df):
         # entry with number n was created before entry m if (n < m)
         # focusing on the creation timestamp
         # SEQ = 1
-        df_seq_1['backdating'] = df_seq_1['SI creation time'].lt(df_seq_1['SI creation time'].shift())
+        df_seq_1['backdating'] = df_seq_1['FN creation time'].lt(df_seq_1['FN creation time'].shift())
         # value is True if the previous row in dataframe has a datetime > datetime considered
         if (df_seq_1['backdating'] == True).any():
-            entries = list(df_seq_1.loc[(df_seq_1['backdating'] == True) & (df['Flag'] == 'User')]['Entry number'].values)
+            entries = list(df_seq_1.loc[(df_seq_1['backdating'] == True) & (df['Events'] == 'User')]['Entry number'].values)
 
             for e in entries:
-                if df.loc[e]['Flag'] == 'User':
+                if df.loc[e]['Events'] == 'User':
                     df.loc[e, 'Events'] = 'Backdating'
                     index_e = int(df_seq_1.loc[df_seq_1['Entry number'] == e].index[0])
                     p_e = index_e - 1
@@ -431,15 +445,15 @@ def events(df):
 
                     # defining upper_bound at which the action occured (taking the min between two possible values)
                     next_lsn = df_seq_1.sort_values(by='LSN', ascending=False).loc[df_seq_1['LSN'] > df_seq_1.loc[index_e]['LSN']].index.values[-1]
-                    upper_bound = min([df_seq_1.loc[index_e]['SI entry modification time'], df_seq_1.loc[next_lsn]['SI creation time']])
+                    upper_bound = min([df_seq_1.loc[index_e]['SI entry modification time'], df_seq_1.loc[next_lsn]['FN creation time']])
 
                     # checking if it is only one file - to make the difference with clock drift
                     # if p_e > e and a_e > p_e
-                    if df_seq_1.loc[p_e]['SI creation time'] > df_seq_1.loc[index_e]['SI creation time'] and \
-                            df_seq_1.loc[a_e]['SI creation time'] > df_seq_1.loc[p_e]['SI creation time']:
+                    if df_seq_1.loc[p_e]['FN creation time'] > df_seq_1.loc[index_e]['SI creation time'] and \
+                            df_seq_1.loc[a_e]['FN creation time'] > df_seq_1.loc[p_e]['FN creation time']:
                         # propose an original creation time based on previous and next entries
-                        creation_date_min = df_seq_1.loc[p_e]['SI creation time'].strftime('%d.%m.%Y %H:%M:%S')
-                        creation_date_max = df_seq_1.loc[a_e]['SI creation time'].strftime('%d.%m.%Y %H:%M:%S')
+                        creation_date_min = df_seq_1.loc[p_e]['FN creation time'].strftime('%d.%m.%Y %H:%M:%S')
+                        creation_date_max = df_seq_1.loc[a_e]['FN creation time'].strftime('%d.%m.%Y %H:%M:%S')
                         events.append(('before ', upper_bound, 'file backdating',
                                        f"The file at entry {e} was backdated"
                                        f". Filename: {df_seq_1.loc[index_e]['Filename']}"
@@ -451,7 +465,7 @@ def events(df):
                         while True:
                             # e is the entry that was flagged for the backdating
                             # now we check if subsequent files are also backdated compared to the entry before e
-                            if df_seq_1.loc[index_e + n]['SI creation time'] >= df_seq_1.loc[p_e]['SI creation time']:
+                            if df_seq_1.loc[index_e + n]['SI creation time'] >= df_seq_1.loc[p_e]['FN creation time']:
                                 break
                             n += 1
 
@@ -468,7 +482,7 @@ def events(df):
                         # drift_realloc = list(df.loc[(df['Sequence number'] == 2) & (df['SI creation time'] > df_seq_1[e]['SI creation time']) & (df['SI creation time'] < df_seq_1[e]['SI creation time'])].index.values)
 
                         # We use the time of the previous entry with SEQ = 1 so may not be accurate
-                        events.append(('after ', df_seq_1.loc[p_e]['SI creation time'], 'clock drift',
+                        events.append(('after ', df_seq_1.loc[p_e]['FN creation time'], 'clock drift',
                                        f"Clock was changed for {df_seq_1.loc[index_e]['SI creation time'].strftime('%d.%m.%Y %H:%M:%S')}"
                                        f". During the clock drift, the following events happened: "
                                        f"\n\t{nl.join(['File ' + df_seq_1.loc[x]['Filename'] + ' was created at ' + df_seq_1.loc[x]['SI creation time'].strftime('%d.%m.%Y %H:%M:%S') for x in drift_entries if isinstance(x, datetime)])}"
@@ -676,7 +690,7 @@ def add_timedelta(df):
     # if events happened the same week
     elif delta.days <= 7 and delta.days > 1:
         add = timedelta(days=1)
-        range = '%d.%m.%Y %H:%M:%S'
+        range = '%d.%m.%Y' #%H:%M:%S'
     # events happened the same year
     elif delta.days > 7 and delta.days < 365:
         add = timedelta(weeks=1)
@@ -704,7 +718,7 @@ def graph_SI_cluster_(df, output, clus):
         x="First cluster",
         y='SI creation time',
         height=600,
-        width=800,
+        width=1000,
         color='Events',
         color_discrete_map={
             'User': 'rgba(8,140,240,0.8)',
@@ -774,6 +788,7 @@ def graph_SI_cluster_(df, output, clus):
     fig.write_image(f"C:\\Users\celin\\UNIVERSITE\MA2S2\TdM\ForensicTools\\treatments\Graphs\supp\SI_cluster.pdf", format='pdf')
     time.sleep(2)
 
+
 def graph_SI_entry(df, output):
     output = str(output)
     nb_entry = list(df['Entry number'].sort_values())[-1] + 10
@@ -786,7 +801,7 @@ def graph_SI_entry(df, output):
         x="Entry number",
         y='SI creation time',
         height=600,
-        width=1300,
+        width=1000,
         color='Events',
         color_discrete_map={
             'User': 'rgba(8,140,240,0.8)',
@@ -805,9 +820,10 @@ def graph_SI_entry(df, output):
 
     fig.update_traces(
         marker={'size': 4, },
+        #TODO
         showlegend=True,
         hovertemplate="<br>".join([
-            #"<b>%{customdata[2]}</b>",
+            "<b>%{customdata[2]}</b>",
             "<b>%{customdata[0]}</b>",
             "Flag : %{customdata[1]}",
             "Timestamp: %{y}",
@@ -862,7 +878,7 @@ def graph_SI_cluster(df, output, clus):
         x="First cluster",
         y='SI creation time',
         height=600,
-        width=800,
+        width=1300,
         color='Events',
         color_discrete_map={
             'User': 'rgba(8,140,240,0.8)',
@@ -882,7 +898,7 @@ def graph_SI_cluster(df, output, clus):
         marker={'size': 4,},
         showlegend=True,
         hovertemplate="<br>".join([
-            #"<b>%{customdata[1]}</b>",
+            "<b>%{customdata[1]}</b>",
             "<b>%{customdata[0]}</b>",
             "Flag : %{customdata[2]}",
             "Timestamp: %{y}",

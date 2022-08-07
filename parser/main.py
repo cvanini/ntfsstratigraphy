@@ -2,7 +2,10 @@
 #### 02.03.2022
 
 '''parse an image file and automatically extract system files, parses them, saves the extracted info in a csv or json
-file'''
+file
+
+Exemple commande :  python .\main.py -f "C:\Users\celin\UNIVERSITE\MA2S2\TdM\Results\COMFOR\HardDix\HardDix.E01" -o ".\outputs\"
+'''
 
 import os, sys
 import subprocess

@@ -13,7 +13,7 @@ parser/temp.py
 /tests
 /treatments
 /parser/usn_parser
-
+/parser/ressources/test.py
 
 # C extensions
 *.so

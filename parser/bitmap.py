@@ -1,7 +1,9 @@
 #### Céline Vanini
-#### 02.03.2021
+#### 02.03.2022
 
-import csv
+#Exemple commande :  python .\bitmap.py -f "C:\Users\celin\UNIVERSITE\MA2S2\TdM\Results\_22042022_1\0\`$Bitmap" -o ".\outputs\"
+
+import csv, os
 import logging
 import itertools
 from tqdm import tqdm

@@ -8,6 +8,8 @@ Sources : File system forensic analysis (B. Carrier, 2005) and https://flatcap.g
 
 The script mostly uses the struct library to read bytes after bytes.
 
+Exemple commande :  python .\MFT.py -f "C:\Users\celin\UNIVERSITE\MA2S2\TdM\Results\_22042022_1\0\`$MFT" -o ".\outputs\"  -j -p
+
 '''
 
 import os

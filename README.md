@@ -1,4 +1,4 @@
-# ntfstratigraphy
+# ntfsstratigraphy
 
 ### Description
 
@@ -80,7 +80,7 @@ by the parser module (plus the NSRL flagged hash_list) is given as an input (man
 
 Usage :
 
-    python main.py -d <directory> -o <output_directory> 
+    python rules.py -d <directory> -o <output_directory> 
 
 #### app.py
 Deprecated

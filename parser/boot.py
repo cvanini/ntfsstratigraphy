@@ -1,5 +1,9 @@
 #### Céline Vanini
-'''parse the $boot file to verify if the MFT file is '''
+#### 02.03.2022
+
+#Exemple commande :  python .\boot.py -f "C:\Users\celin\UNIVERSITE\MA2S2\TdM\Results\_22042022_1\0\`$Boot" -o ".\outputs\" -c
+
+
 import os
 import csv
 import struct
